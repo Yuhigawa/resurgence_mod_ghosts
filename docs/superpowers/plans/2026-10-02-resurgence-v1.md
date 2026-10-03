@@ -31,7 +31,7 @@
 
 This makes each task's verification slower than a unit test but no less binding: **no step may be checked off on the basis of reading the code.** Every `- [ ]` that says "observe" requires the actual console line or in-game observation. If a step cannot be verified, say so and stop rather than marking it done.
 
-Multiple players come from bots: `spawnBot` (see Task 1 Step 6). Bots are real entities in
+Multiple players come from bots: `spawn_bot` (see Task 1 Step 6). Bots are real entities in
 `level.players`, so they are squad-assigned, killable, and count for wipe detection — but
 they will not walk out of the ring on command, so Task 9's out-of-ring damage must be
 verified with a real client.
@@ -194,19 +194,23 @@ it is dedicated.
 - [ ] **Step 6: Get a second and third client in — verify bots work**
 
 Several later tasks need 2-4 players, and the two most valuable (redeploy in Task 5,
-win conditions in Task 10) are unreachable with one client. iw6-mod has bot support:
-`spawnBot` is a registered console command (the mangled symbol
-`bot_team_join@...@bots@@` confirms a `bots` module), alongside `addbot`,
-`addtestclient` / `spawntestclient` / `canspawntestclient`, and the `sv_botsAutoJoin`
-dvar set in Step 4.
+win conditions in Task 10) are unreachable with one client. iw6-mod has bot support. `component@bots` is real and registers console
+commands via its `post_unpack( params@command& )`: `spawn_bot`, `bot_team`,
+`bot_team_join` and `addbot`, alongside `addtestclient` / `spawntestclient` /
+`canspawntestclient` and the `sv_botsAutoJoin` dvar set in Step 4.
 
-On the running server console, run `spawnBot 3`. If that spelling is rejected, try
-`addbot`, then `spawntestclient`.
+On the running server console, run `spawn_bot 3`. If that spelling is rejected, try
+`addbot`, then `spawntestclient`. Use `bot_team` if bots need placing explicitly.
 
 Expected: three bots join and appear on the scoreboard. Confirm they are real player
 entities rather than UI placeholders — the local GSC is full of `isai( self )` branches
 and `level.bot_funcs` (`_playerlogic.gsc:687-688`, `_damage.gsc:854-855`), which only run
-for entities in `level.players`. **This matters for Task 4**: `_squads` assigns on
+for entities in `level.players`. One of the bots component's `post_unpack` lambdas takes `netadr_s&` — a network
+address — which suggests bots connect through a synthesized address on the real
+client-connect path rather than being conjured as entities. That makes it likely they
+fire `connected`, but it is inference from a symbol signature, not proof.
+
+**This matters for Task 4**: `_squads` assigns on
 `level waittill( "connected", player )`, so if bots do not fire `connected` they will
 never be squad-assigned, and that changes how every later task is verified. Note in
 `docs/RUNNING.md` which command worked and whether bots get squad-assigned once Task 4
@@ -248,7 +252,7 @@ git add deploy.sh config/server.cfg docs/RUNNING.md README.md src/data/scripts/m
 git commit -m "Add deploy.sh, server.cfg, and how to run the server
 
 iw6x.exe is iw6-mod and ships a dedicated component; nothing auto-execs
-server.cfg, so it is passed with +exec. Bots come from spawnBot, which
+server.cfg, so it is passed with +exec. Bots come from spawn_bot, which
 makes the multi-client verification steps reachable."
 ```
 
@@ -666,7 +670,7 @@ Restart with the mod on and `scr_resurgence_debug 1`, then join with **one** cli
 
 - [ ] **Step 4: Verify duo packing with four clients**
 
-Join with one real client, then run `spawnBot 3` on the console (or whichever command Task 1 Step 6 recorded). Expected, with `squadsize 2`: the four land in squads `0, 0, 1, 1` in join order, and `dump_squads` shows exactly that.
+Join with one real client, then run `spawn_bot 3` on the console (or whichever command Task 1 Step 6 recorded). Expected, with `squadsize 2`: the four land in squads `0, 0, 1, 1` in join order, and `dump_squads` shows exactly that.
 
 If the bots appear on the scoreboard but `dump_squads` reports them `UNASSIGNED`, bots do not fire `level waittill( "connected" )` on this build. Fix it here, not later: also assign in `_squads` from a sweep over `level.players` inside `dump_squads`'s caller, or hook `level.bot_funcs["player_spawned"]`. Every later task's multi-player verification depends on bots being squad members.
 
@@ -1706,8 +1710,8 @@ This plan is written against a build whose stock scripts cannot be read. Four th
 
 1. **Same-file `replacefunc`** (Task 2 Step 3) — if it does not work, `_redeploy` edits `mayspawn` in a copied `_playerlogic.gsc` instead. Fifth overlay edit.
 2. **The FFA spawn classname** (Task 6 Step 3) — `mp_dm_spawn` is inferred. The module logs and falls back to the tdm array, which `aliens.gsc:787` attests.
-3. **The bot command spelling** (Task 1 Step 6) — `spawnBot` is the best candidate of
-   four attested strings; the fallbacks are `addbot` and `spawntestclient`, and a LAN
+3. **The bot command spelling** (Task 1 Step 6) — `spawn_bot` is confirmed registered;
+   the fallbacks are `addbot` and `spawntestclient`; the fallbacks are `addbot` and `spawntestclient`, and a LAN
    second machine if none work.
 4. **MP weapon names** (Task 8 Step 4) — unverifiable from `data/`. The passthrough default means the module works without them.
 
