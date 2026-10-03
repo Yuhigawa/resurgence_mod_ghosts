@@ -460,6 +460,20 @@ Consequences, all of which this spec now reflects:
 - This is also a robustness win: the mod cannot be broken by a platform update reverting
   our edits, because we make none.
 
+**ADR-7 — define our own liveness predicate; never use the stock one.**
+`maps\mp\_utility::isreallyalive()` returns **false for bots that are demonstrably
+alive** — measured as `isalive=1`, `sessionstate="playing"`, `isplayer=1`, while killing
+each other in the kill log. Since `squad_living_members`, `squad_is_wiped` and
+`may_redeploy` all rest on liveness, using it would make any squad containing a bot read
+as permanently wiped: instant elimination, and `_win` ending matches the moment play
+begins. `_squads::rsg_is_alive( ent )` is `isdefined` + `isalive` + `sessionstate ==
+"playing"`, which is what actually distinguishes a player who can be shot and holds for
+humans and bots alike. Nothing in the mod calls the stock predicate.
+
+This also means the real reason the stock function fails is unknown — it is compiled in a
+fastfile — so the lesson generalises: a stock predicate's *name* is not evidence of its
+behaviour on this build. Measure it before building on it.
+
 ## Deferred## Deferred
 
 - **Squadmate blips / blue names** — needs the stock objective API verified against a

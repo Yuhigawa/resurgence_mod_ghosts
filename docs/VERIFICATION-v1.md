@@ -67,3 +67,28 @@ Commands that do **nothing** over rcon, and appear to be console-only:
 `addbot`, `bot_team`, `addtestclient`, `spawntestclient`, `clientkick`, `kick`.
 Bots can therefore only be produced with `+set sv_botsAutoJoin 1` at launch, and their
 count controlled with `+set sv_maxclients N`.
+
+## Task 5 — redeploy
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Our `level.onrespawndelay` is the one invoked | **PASS** | `RSG: respawndelay: Dsso squad 1 -> 10s`, with the value tracking the dvar (20 → 10) |
+| ADR-5 works on a real gametype callback | **PASS** | as above — the thread re-assert survives the gametype, no file edit |
+| `may_redeploy` true with a living squadmate | **PASS** | `squadmate alive: 1` while the probe showed the squadmate `isalive=1 playing` |
+| `eliminate()` makes a player a permanent spectator | **PASS** | `RSG: eliminate: My Flaws (squad 0)`, still `sessionstate=spectator` 19s later |
+| The `mayspawn` gate denies an eliminated player | **PASS** | forced a spawn attempt: `RSG: mayspawn: clang eliminated, denied`, stayed spectator while others played |
+| Debug backdoor removed | **PASS** | setting `scr_resurgence_debug_eliminate 1` after removal produces zero eliminations |
+| Countdown visibly clears mid-wait | **NOT RUN** | needs a human client to see the on-screen timer; the underlying `notify( "end_respawn" )` is exercised by the elimination path |
+
+**The significant bug found here: the stock liveness predicate is wrong for bots.**
+`maps\mp\_utility::isreallyalive()` returned false for every bot while the state probe
+showed `isalive=1 sessionstate=playing isplayer=1` and the kill log showed them fighting.
+Every squad containing a bot would have read as permanently wiped. Replaced throughout by
+`_squads::rsg_is_alive` (ADR-7). Before the fix: `squadmate alive: 0` for a bot whose
+partner was plainly alive. After: `1`.
+
+**A self-inflicted bug worth recording**, because it shows what the cycle catches: when
+removing the temporary debug watcher I sliced out `rsg_mayspawn` along with it. The
+`replacefunc` then referenced a missing function, `init()` died, and the entire mod went
+silent — no error, just an empty log. Caught immediately because the verification step
+expects specific lines and got none.

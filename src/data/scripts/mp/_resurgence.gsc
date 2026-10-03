@@ -39,9 +39,12 @@ init()
 	rsg_log( "init: enabled, squadsize " + level.rsg.squadsize + ", redeploy " + level.rsg.redeploydelay + "s" );
 
 	scripts\mp\resurgence\_squads::init();
+	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
+		scripts\mp\resurgence\_redeploy::init();
 
 	install_callbacks();
 	level thread reassert_callbacks();
+	level thread debug_player_state();
 }
 
 register_dvars()
@@ -92,7 +95,10 @@ install_callbacks()
 		return;
 
 	level.rsg.installs++;
-	rsg_log( "install_callbacks (pass " + level.rsg.installs + ")" );
+
+	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
+		scripts\mp\resurgence\_redeploy::install_callbacks();
+	rsg_log( "install_callbacks (pass " + level.rsg.installs + "): onrespawndelay set" );
 }
 
 rsg_on()
@@ -108,4 +114,29 @@ rsg_log( msg )
 		return;
 
 	logprint( "RSG: " + msg + "\n" );
+}
+
+// TEMPORARY (Task 5 diagnosis). Separates the three notions of "alive" so we
+// can tell whether bots are not spawning at all, or are spawning but failing
+// maps\mp\_utility::isreallyalive -- which would silently make every squad
+// read as wiped.
+debug_player_state()
+{
+	level endon( "game_ended" );
+
+	for (;;)
+	{
+		wait 10;
+
+		if ( !getdvarint( "scr_resurgence_debug_state", 0 ) )
+			continue;
+
+		foreach ( var_0 in level.players )
+		{
+			if ( !isdefined( var_0 ) )
+				continue;
+
+			rsg_log( "state: " + var_0.name + " isalive=" + isalive( var_0 ) + " sessionstate=" + var_0.sessionstate + " reallyalive=" + var_0 maps\mp\_utility::isreallyalive() + " isai=" + isai( var_0 ) + " isplayer=" + isplayer( var_0 ) );
+		}
+	}
 }

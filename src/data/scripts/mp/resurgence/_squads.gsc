@@ -6,6 +6,26 @@
 
 #include common_scripts\utility;
 
+// Liveness, our own, because the stock predicate CANNOT be trusted here: it
+// returns false for bots that are demonstrably alive (isalive=1,
+// sessionstate="playing", and killing each other in the log). Using it would
+// make any squad containing a bot read as permanently wiped and eliminated
+// instantly. These two conditions are what actually distinguish a player who
+// can be shot, and they hold for humans and bots alike.
+rsg_is_alive( ent )
+{
+	if ( !isdefined( ent ) )
+		return 0;
+
+	if ( !isalive( ent ) )
+		return 0;
+
+	if ( ent.sessionstate != "playing" )
+		return 0;
+
+	return 1;
+}
+
 init()
 {
 	// Authoritative roster, keyed by squad id. level.players CANNOT be used
@@ -116,7 +136,7 @@ squad_living_members( squadid )
 
 	foreach ( var_1 in squad_members( squadid ) )
 	{
-		if ( var_1 maps\mp\_utility::isreallyalive() )
+		if ( rsg_is_alive( var_1 ) )
 			var_0[var_0.size] = var_1;
 	}
 
@@ -173,7 +193,7 @@ dump_squads()
 		var_1 = "";
 
 		foreach ( var_2 in squad_members( var_0 ) )
-			var_1 = var_1 + var_2.name + "(" + var_2 maps\mp\_utility::isreallyalive() + ") ";
+			var_1 = var_1 + var_2.name + "(" + rsg_is_alive( var_2 ) + ") ";
 
 		scripts\mp\_resurgence::rsg_log( "  squad " + var_0 + " [" + squad_members( var_0 ).size + "/" + level.rsg.squadsize + "]: " + var_1 );
 	}
