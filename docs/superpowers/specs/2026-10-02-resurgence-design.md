@@ -167,6 +167,15 @@ working precedent for exactly this shape: `takeallweapons()` (`:1109`), action s
 cleared (`:1113-1123`), `_clearperks()` (`:1125`), then `self.killstreaktype = "none"`
 (`:1137`) before anything is granted. Follow that order.
 
+**Weapon names are dvar-driven, with a call-through default.** No plain MP weapon name
+is verifiable from `data/` — every attested `iw6_*_mp` string there is an alien or
+special variant — and a bad name passed to `giveweapon` risks a script error. So
+`scr_resurgence_primary` and `scr_resurgence_secondary` default to **empty**, and when
+both are empty `rsg_giveloadout` strips killstreaks and perks and then calls through to
+`_class::giveloadout`, leaving the player their chosen class. That makes "no killstreaks"
+work from the first build instead of blocking the module on a guessed weapon name; the
+true fixed kit arrives by setting the two dvars once names are confirmed in-game.
+
 **Two bypass sites to close.** `_class::giveloadout` is also called *directly*,
 ignoring `level.custom_giveloadout`, at `_menus.gsc:182` and `_menus.gsc:598` — the
 class-change paths, both gated on `level.ingraceperiod && !self.hasdonecombat`. The
@@ -179,6 +188,14 @@ call `level.custom_giveloadout` when defined, else the stock function. (The alte
 cross-script hook and no edits; rejected because it discards a stock function whose
 internals we cannot read, where the guard keeps vanilla behaviour intact whenever the
 mod is off.)
+
+**No death hook anywhere.** `level.onplayerkilled` is called unconditionally at
+`_damage.gsc:852`, and `dm.gsc` assigns it for scoring, so using it would mean chaining
+through dm's handler and would add a fourth callback to ADR-5's overwrite exposure.
+Nothing in this design needs it: `_win`'s watcher detects wipes by polling, and the
+redeploy decision is made inside `mayspawn` at spawn time. The grace-period rule is
+likewise enforced in the watcher, which skips wipe flagging while `level.ingraceperiod`
+is set.
 
 **`_win.gsc`** — a 0.5s watcher thread. When a squad transitions to wiped it announces
 the wipe and marks members eliminated. When exactly one squad remains it announces the
