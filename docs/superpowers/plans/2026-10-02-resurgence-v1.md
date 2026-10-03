@@ -15,8 +15,12 @@
 - **Namespace rule:** `data/` is the script root, so `src/data/scripts/mp/resurgence/_squads.gsc` is addressed in GSC as `scripts\mp\resurgence\_squads`.
 - **Master switch:** `scr_resurgence_enabled` defaults to `0`. Every module returns immediately when it is 0. A broken build is disabled by dvar, never by deleting files.
 - **Required server config:** `g_gametype dm`, `scr_friendlyfire 0`, `scr_dm_numlives 0`. ADR-2 depends on `numlives` staying 0 and `level.disablespawning` never being set.
-- **Edits to existing overlay files** are wrapped in `// RESURGENCE BEGIN` / `// RESURGENCE END`, and the edited file is committed to `src/data/` as a whole-file copy. Four are foreseen: `_gamelogic.gsc` ×1, `_menus.gsc` ×2, `_damage.gsc` ×1 (conditional).
-- **One marked overlay edit per task.** Each is deployed and parse-checked on its own so a script error names its own cause.
+- **Never modify a file CBServers ships.** The platform restores them within ~3s of launch, silently and before scripts load (ADR-6, found in Task 3). `src/data/` holds only new files; every hook goes through `replacefunc` or a `level.*` pointer, both verified working.
+- **`rsg_log` uses `logprint( "...\n" )`.** `logstring` and `println` write nothing to the log on this build. Output appears in `logs/games_mp.log`, readable from WSL.
+- **Define `init()` only, never `main()`.** The loader enters both on the same file, so defining both wires everything twice.
+- **`init()` must not read gametype `level` state** (`level.teambased`, `level.gametype`) — it runs before the gametype and that is a script error, not a value.
+- **`#include common_scripts\utility;`** is required for `max()` and friends; without it a script dies silently mid-function.
+- Config lines need **`set`**: a bare `name value` line only works for an already-registered dvar and fails silently for ours.
 - **No death hook.** `level.onplayerkilled` is deliberately never assigned (spec: "No death hook anywhere").
 - **Player field prefix:** `rsg_`. Level state lives on `level.rsg` (a `spawnstruct()`), except the two zone values `level.rsg_center` / `level.rsg_radius` named in the spec.
 - **Logging:** all debug output goes through `scripts\mp\_resurgence::rsg_log()`, gated on `scr_resurgence_debug`.
@@ -446,34 +450,29 @@ Set `scr_resurgence_enabled 1` and `scr_resurgence_debug 1` per `docs/RUNNING.md
 
 Expected: `RSG: init: enabled, squadsize 2, redeploy 15s` followed by `RSG: install_callbacks`. If `install_callbacks` appears once, only `init()` has run so far — Step 5 adds the second call site.
 
-- [ ] **Step 4: Copy `_gamelogic.gsc` into the repo and add the marked hook**
+- [ ] **Step 4: Add the re-assert thread (replaces the planned `_gamelogic.gsc` edit)**
 
-```bash
-cd ~/ws/personal/resurgence_mod_ghost
-mkdir -p src/data/maps/mp/gametypes
-cp /mnt/d/games/cod_cbservers/ghosts_game_files/data/maps/mp/gametypes/_gamelogic.gsc src/data/maps/mp/gametypes/
-grep -n "onstartgametype" src/data/maps/mp/gametypes/_gamelogic.gsc
+The original plan patched `callback_startgametype`. **That does not work**: CBServers
+restores any file it ships within ~3s of launch, deleting the addition before scripts
+load, with no error. Use a thread instead — see `reassert_callbacks()` in the committed
+`_resurgence.gsc`: install in `init()`, again after `wait 0.05` (the next frame, after the
+whole synchronous body of `callback_startgametype`, which is the pass that sticks), and
+once more on `level waittill( "prematch_over" )`.
+
+- [ ] **Step 5: Verify the passes**
+
+Deploy and restart with the mod on. Expected in `logs/games_mp.log`:
+
+```
+0:00 RSG: init: enabled, squadsize 2, redeploy 15s
+0:00 RSG: install_callbacks (pass 1)
+0:00 RSG: install_callbacks (pass 2)
+0:20 RSG: install_callbacks (pass 3)
 ```
 
-Expected: `1660:    [[ level.onstartgametype ]]();`. Then edit `src/data/maps/mp/gametypes/_gamelogic.gsc`, replacing that single line with:
-
-```gsc
-    [[ level.onstartgametype ]]();
-// RESURGENCE BEGIN
-    if ( isdefined( level.rsg_install_callbacks ) )
-        [[ level.rsg_install_callbacks ]]();
-// RESURGENCE END
-```
-
-This lands before `thread startgame()` at what was `:1667`, so it is always in place before anything spawns.
-
-- [ ] **Step 5: Deploy and confirm `install_callbacks` now runs twice**
-
-```bash
-cd ~/ws/personal/resurgence_mod_ghost && ./deploy.sh
-```
-
-Restart with the mod on. Expected: **two** `RSG: install_callbacks` lines per match — one from `init()`, one from the hook. Two lines is the proof ADR-5 is live. One line means the hook did not land: re-check the edit and that `deploy.sh` listed `maps/mp/gametypes/_gamelogic.gsc`.
+Pass 2 is the important one — one frame later than pass 1, therefore after the gametype.
+Only pass 1 means the thread died; no passes means `init()` died before it (check the
+`#include` and that config lines use `set`).
 
 - [ ] **Step 6: Commit**
 
@@ -1259,7 +1258,20 @@ With the mod on, spawn, then **during the grace period** change class from the m
 
 Expected: the loadout reverts to a vanilla kit **with killstreaks**, and **no** `RSG: loadout:` line appears for the change. That is `_menus.gsc:182` calling `_class::giveloadout` directly, bypassing `level.custom_giveloadout`. Confirm it before fixing it — this is the failing test.
 
-- [ ] **Step 6: Add the two guards**
+- [ ] **Step 6: Hook `_class::giveloadout` (replaces the planned `_menus.gsc` edits)**
+
+The two guards in `_menus.gsc:182` / `:598` **cannot be added** — CBServers restores that
+file (ADR-6). Instead:
+
+```gsc
+replacefunc( maps\mp\gametypes\_class::giveloadout, ::rsg_class_giveloadout );
+```
+
+One cross-script hook covers all three call sites — both `_menus.gsc` grace-period paths
+and the `else` branch at `_playerlogic.gsc:699` — so `level.custom_giveloadout` is not
+needed at all. Cross-script `replacefunc` is verified working (Task 2).
+
+- [ ] **Step 6b (superseded, do not do): add the two guards**
 
 ```bash
 cd ~/ws/personal/resurgence_mod_ghost
@@ -1704,15 +1716,15 @@ git commit -m "Record v1 verification results and tuned zone defaults"
 
 ---
 
-## Deviations to expect
+## Deviations to expect — status after Tasks 1-3
 
-This plan is written against a build whose stock scripts cannot be read. Four things are most likely to need adjusting, and each has its response written into the task that meets it:
+| Item | Status |
+| --- | --- |
+| Same-file `replacefunc` | **Resolved: works.** Task 5 proceeds as written; no `_playerlogic.gsc` fallback. |
+| The FFA spawn classname | **Still open.** `mp_dm_spawn` inferred; Task 6 logs the count and falls back to the tdm array. |
+| MP weapon names | **Resolved.** 11 real names harvested from kill lines (`docs/RUNNING.md`). |
+| Bot command spelling | **Resolved differently.** `spawn_bot` / `bot_team_join` are not commands at all; `addbot` and friends do nothing over rcon. Controlled counts come from `+set sv_maxclients 4 +set sv_botsAutoJoin 1` at launch. |
+| Editing files CBServers ships | **Resolved: impossible.** Restored within ~3s, silently. All four planned edits dropped; everything goes through `replacefunc` (ADR-6). |
 
-1. **Same-file `replacefunc`** (Task 2 Step 3) — if it does not work, `_redeploy` edits `mayspawn` in a copied `_playerlogic.gsc` instead. Fifth overlay edit.
-2. **The FFA spawn classname** (Task 6 Step 3) — `mp_dm_spawn` is inferred. The module logs and falls back to the tdm array, which `aliens.gsc:787` attests.
-3. **The bot command spelling** (Task 1 Step 6) — `spawn_bot` is confirmed registered;
-   the fallbacks are `addbot` and `spawntestclient`; the fallbacks are `addbot` and `spawntestclient`, and a LAN
-   second machine if none work.
-4. **MP weapon names** (Task 8 Step 4) — unverifiable from `data/`. The passthrough default means the module works without them.
-
-Anything else that contradicts the spec's "verified hook points" table should be recorded in the task's commit message and reported, not worked around silently.
+Anything else that contradicts the spec's "verified hook points" table should be recorded
+in the task's commit message and reported, not worked around silently.

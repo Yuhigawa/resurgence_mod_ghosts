@@ -177,6 +177,88 @@ both are empty `rsg_giveloadout` strips killstreaks and perks and then calls thr
 work from the first build instead of blocking the module on a guessed weapon name; the
 true fixed kit arrives by setting the two dvars once names are confirmed in-game.
 
+**The two bypass sites are closed with `replacefunc`, not edits.**
+`_class::giveloadout` is also called *directly*, ignoring `level.custom_giveloadout`, at
+`_menus.gsc:182` and `_menus.gsc:598` — the class-change paths, both gated on
+`level.ingraceperiod && !self.hasdonecombat`. The window is narrow but it is exactly when
+players sit in the class menu, and a Resurgence player who spawns at match start and never
+dies would keep that vanilla kit, killstreaks included, for the whole match.
+
+Guarding those two call sites in `_menus.gsc` is impossible (ADR-6). So `_loadout` instead
+does `replacefunc( maps\mp\gametypes\_class::giveloadout, ::rsg_class_giveloadout )`,
+which covers all three call sites — both `_menus.gsc` paths and the `else` branch at
+`_playerlogic.gsc:699` — with one cross-script hook. The replacement applies the
+Resurgence kit and is the only loadout path in the mode, so `level.custom_giveloadout`
+becomes redundant and is not used at all.
+
+**`_win.gsc`** — a 0.5s watcher thread. When a squad transitions to wiped it announces
+the wipe and marks members eliminated. When exactly one squad remains it announces the
+winning squad with `iprintlnbold` and calls
+`maps\mp\gametypes\_gamelogic::endgame( <a living member>, game["end_reason"]["enemies_eliminated"] )`.
+
+That `end_reason` key is populated outside `data/`, so it cannot be confirmed locally.
+It is very likely present under `dm`: `_gamelogic.gsc:134` passes it from the
+**non-teambased** branch of `default_ononeleftevent`, which is dm's own last-player-alive
+path, so vanilla FFA would already be broken if it were unset. `_win.gsc` guards it
+anyway and falls back to `game["end_reason"]["ended_game"]`, since the cost is one
+`isdefined`.
+
+### Callback installation order
+
+`_spawning` and `_redeploy` work by *assigning* `level.getspawnpoint`,
+`level.onspawnplayer` and `level.onrespawndelay`. The gametype assigns the same
+pointers from inside `[[ level.onstartgametype ]]()` (`_gamelogic.gsc:1660`), and **it
+runs after we do**: our scripts are loaded by `maps\mp\_load::main()` at the top of
+`callback_startgametype` (`:1345`), and `onstartgametype` is called further down that same
+function. Verified directly — `level.teambased` is undefined inside our `init()`, which
+is only possible if the gametype has not run yet. So anything `init()` assigns is
+overwritten before the frame ends, every time. This is not a risk; it is the guaranteed
+behaviour.
+
+Patching `_gamelogic.gsc` to call us back is **not possible** (ADR-6: CBServers restores
+it). Instead `_resurgence.gsc` installs three times from a thread:
+
+1. in `init()` — immediately, so the pointers are never undefined;
+2. after `wait 0.05` — the next frame, which is after the entire synchronous body of
+   `callback_startgametype`, so this is the pass that sticks;
+3. on `level waittill( "prematch_over" )` — in case anything reassigns them during
+   deferred setup or a round switch.
+
+Observed in the log: passes 1 and 2 at `0:00`, pass 3 at `0:20`.
+
+`replacefunc` (used for `mayspawn`, `attackerishittingteam` and `_class::giveloadout`) is
+unaffected by load order; only plain pointer assignments have this problem.
+
+**`_loadout.gsc`** — one preset weapon/perk kit applied on spawn, killstreaks
+disabled. Uses `level.custom_giveloadout = ::rsg_giveloadout`, which `spawnplayer`
+consumes **unconditionally** at `_playerlogic.gsc:696-697`, replacing the default
+`_class::giveloadout` call on the `else` branch. That path is gametype-agnostic and so
+runs under `dm`; `aliens.gsc:58` is precedent for the same hook, not a dependency on it.
+
+Note what *not* to use here: `level.custom_onspawnplayer_func` is read only inside
+`aliens.gsc`'s own `onspawnplayer` (`aliens.gsc:648`) and is never consulted under
+`dm`. Non-loadout per-spawn setup goes through `level.onspawnplayer`
+(`_playerlogic.gsc:678`) instead. The callback receives vanilla's faux-spawn flag as
+its one argument; pass it through.
+
+**The hook runs after `setclass`.** `_class::setclass( self.class )` is called at
+`_playerlogic.gsc:694`, two lines before our hook, so whatever the player's chosen class
+grants is applied first and we overwrite on top. `rsg_giveloadout` must therefore be a
+*clear slate*, not a top-up, and in particular **killstreaks must be disabled inside the
+hook body** — never assumed absent because `setclass` ran. `aliens.gsc:1107-1211` is the
+working precedent for exactly this shape: `takeallweapons()` (`:1109`), action slots
+cleared (`:1113-1123`), `_clearperks()` (`:1125`), then `self.killstreaktype = "none"`
+(`:1137`) before anything is granted. Follow that order.
+
+**Weapon names are dvar-driven, with a call-through default.** No plain MP weapon name
+is verifiable from `data/` — every attested `iw6_*_mp` string there is an alien or
+special variant — and a bad name passed to `giveweapon` risks a script error. So
+`scr_resurgence_primary` and `scr_resurgence_secondary` default to **empty**, and when
+both are empty `rsg_giveloadout` strips killstreaks and perks and then calls through to
+`_class::giveloadout`, leaving the player their chosen class. That makes "no killstreaks"
+work from the first build instead of blocking the module on a guessed weapon name; the
+true fixed kit arrives by setting the two dvars once names are confirmed in-game.
+
 **Two bypass sites to close.** `_class::giveloadout` is also called *directly*,
 ignoring `level.custom_giveloadout`, at `_menus.gsc:182` and `_menus.gsc:598` — the
 class-change paths, both gated on `level.ingraceperiod && !self.hasdonecombat`. The
@@ -255,10 +337,9 @@ through that one value (`var_13`, `_damage.gsc:1602`), one hook covers all damag
 paths — including those in stock files we do not have locally. Requires
 `scr_friendlyfire 0`.
 
-**Fallback** if that stock function cannot be hooked: a marked two-line edit at
-`_damage.gsc:1602` ORing in the squad check. Any such edit to a dumped overlay file is
-wrapped in `// RESURGENCE BEGIN` / `// RESURGENCE END` comments so it survives a future
-re-dump by being easy to find and re-apply.
+Verified working: a `replacefunc` stub on this function was reached repeatedly as bots
+traded fire. The previously planned fallback — a marked edit at `_damage.gsc:1602` — is
+not available (ADR-6) and is not needed.
 
 ## Configuration
 
@@ -352,15 +433,30 @@ this design either targets a file already present in `data/` or goes through
 `replacefunc`, which needs the stock function's signature and semantics but not its
 source.
 
-**ADR-5 — install callbacks twice rather than rely on load order.**
-See Callback installation order. The alternative was to establish empirically whether
-`scripts/mp/` loads before or after `[[ level.onstartgametype ]]()` and depend on the
-answer. Rejected: the failure mode is silent (three modules inert, no script error),
-the ordering is undocumented and could change with a server update, and a three-line
-hook in a file we already override makes the question moot. Cost is one more marked
-edit to a dumped overlay file.
+**ADR-5 — re-assert callbacks from a thread rather than rely on load order.**
+The gametype provably runs after us and overwrites `level.getspawnpoint`,
+`level.onspawnplayer` and `level.onrespawndelay`. The original plan was a marked
+three-line hook in `callback_startgametype`; ADR-6 makes that impossible. A thread that
+yields one frame and reinstalls achieves the same thing with no edit, and a third pass at
+`prematch_over` covers deferred reassignment. Verified: three passes logged per match.
 
-## Deferred
+**ADR-6 — add files to `data/`, never modify the ones CBServers ships.**
+Discovered by testing, not documented anywhere: within ~3 seconds of launch the platform
+**restores** any file it ships under `data/`. An eight-line addition to
+`_gamelogic.gsc` was deleted and the file returned byte-identical to its original 2770
+lines, before scripts even loaded — silently, with no error and no log line. New files we
+add (`_resurgence.gsc`, the modules) survive untouched.
+
+Consequences, all of which this spec now reflects:
+
+- The four previously foreseen overlay edits (`_gamelogic.gsc` ×1, `_menus.gsc` ×2,
+  `_damage.gsc` ×1) are **all impossible**. The repo contains no copies of shipped files.
+- Every hook into stock behaviour must go through `replacefunc` or a `level.*` pointer.
+  Both are verified working on this build.
+- This is also a robustness win: the mod cannot be broken by a platform update reverting
+  our edits, because we make none.
+
+## Deferred## Deferred
 
 - **Squadmate blips / blue names** — needs the stock objective API verified against a
   script dump. Deferred rather than guessed at.
@@ -386,13 +482,6 @@ path from `GHOSTS_DIR`, defaulting to
 `/mnt/d/games/cod_cbservers/ghosts_game_files`, copies only files under `src/data/`,
 never deletes anything in the install, and prints what it wrote.
 
-Any edit this project makes to an **existing** overlay file in the install is also
-committed here as a copy of that file under `src/data/`, so the change is versioned
-rather than living only in the game folder. Four such edits are foreseen:
-
-- `_gamelogic.gsc` — the `callback_startgametype` re-assert hook (ADR-5, certain)
-- `_menus.gsc` ×2 — the `custom_giveloadout` guard at `:182` and `:598` (certain)
-- `_damage.gsc` — the friendly-fire fallback, only if `replacefunc` on
-  `attackerishittingteam` fails
-
-All are wrapped in `// RESURGENCE BEGIN` / `// RESURGENCE END`.
+This project modifies **no** file that CBServers ships (ADR-6) — such edits are silently
+restored within seconds of launch. `src/data/` therefore contains only new files, and
+every hook into stock behaviour goes through `replacefunc` or a `level.*` pointer.
