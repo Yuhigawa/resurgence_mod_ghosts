@@ -14,9 +14,26 @@ init()
 	replacefunc( maps\mp\gametypes\_damage::callback_playerdamage, ::rsg_callback_playerdamage );
 }
 
+// Melee never reaches the replaced callback_playerdamage -- measured: the
+// kill log recorded a MOD_MELEE hit that the hook never saw. level.
+// callbackplayerdamage is the other documented entry (aliens.gsc:52 assigns
+// it), so claim that too and see whether melee arrives by this route.
+install_callbacks()
+{
+	level.callbackplayerdamage = ::rsg_callback_playerdamage;
+}
+
 rsg_callback_playerdamage( var_0, var_1, var_2, var_3, var_4, var_5, var_6, var_7, var_8, var_9 )
 {
-	var_2 = scaled_damage( var_1, var_2, var_4 );
+	var_10 = scaled_damage( var_1, var_2, var_4 );
+
+	// Kept, dvar-gated: this probe is what revealed that melee travels a
+	// different entry point, and it is the fastest way to answer any future
+	// "why does X hit for Y" question.
+	if ( getdvarint( "scr_resurgence_debug_damage", 0 ) )
+		scripts\mp\_resurgence::rsg_log( "dmg: mod=" + var_4 + " in=" + var_2 + " out=" + var_10 + " hp=" + self.health + "/" + self.maxhealth + " weap=" + var_5 );
+
+	var_2 = var_10;
 	maps\mp\gametypes\_damage::callback_playerdamage_internal( var_0, var_1, self, var_2, var_3, var_4, var_5, var_6, var_7, var_8, var_9 );
 }
 

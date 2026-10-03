@@ -119,6 +119,9 @@ install_callbacks()
 		scripts\mp\resurgence\_redeploy::install_callbacks();
 
 	scripts\mp\resurgence\_spawning::install_callbacks();
+
+	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
+		scripts\mp\resurgence\_ttk::install_callbacks();
 	scripts\mp\resurgence\_loadout::install_callbacks();
 	rsg_log( "install_callbacks (pass " + level.rsg.installs + "): onrespawndelay + getspawnpoint set" );
 }
