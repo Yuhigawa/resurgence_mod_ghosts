@@ -144,11 +144,23 @@ map_centroid()
 // circumference is approximated by N objective icons that are repositioned
 // as the ring shrinks. Indices start high because gametypes use the low ones
 // and nothing else in this build touches the objective API.
-// An objective marker renders ONLY if it is given an icon material. A
-// four-variant probe settled it: plain, allies-assigned and axis-assigned
-// markers were all invisible, while the one with an explicit icon showed up
-// as a dot on the compass. objective_add alone succeeds server-side and draws
-// nothing, which is why this looked broken for so long.
+// MINIMAP MARKERS DO NOT WORK ON THIS BUILD. Defaulted off.
+//
+// Everything here succeeds server-side -- objective_add, objective_icon,
+// objective_state, objective_team all return without error -- and nothing
+// renders on a player's compass. Tried: no icon; compassiconfriendly;
+// compassiconenemy; assignment to allies and to axis; 16, 24 and 36 markers;
+// radii from 700 to 2600; standing directly on the ring. A player watching
+// the minimap saw nothing attributable to these in any configuration.
+//
+// Valid material names cannot be enumerated from this install: the local GSC
+// contains no setshader or precacheshader calls, and the candidates in the
+// binary (compassicons, objpoints, compass_objectives) turned out to be
+// script symbols rather than dvars or materials.
+//
+// The readout below is what actually ships. Left in place, and dvar-gated, so
+// that anyone who learns a working material name can flip it on without
+// rewriting this.
 markers_create()
 {
 	level.rsg.markercount = getdvarint( "scr_resurgence_zone_markers" );
