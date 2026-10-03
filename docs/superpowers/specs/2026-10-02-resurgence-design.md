@@ -67,6 +67,7 @@ src/data/scripts/mp/resurgence/_squads.gsc   membership and queries
 src/data/scripts/mp/resurgence/_redeploy.gsc may I respawn, and after how long
 src/data/scripts/mp/resurgence/_spawning.gsc where I respawn
 src/data/scripts/mp/resurgence/_zone.gsc     shrinking ring and gas damage
+src/data/scripts/mp/resurgence/_friendlyfire.gsc squadmates cannot damage each other
 src/data/scripts/mp/resurgence/_loadout.gsc  fixed kit, killstreaks off
 src/data/scripts/mp/resurgence/_win.gsc      squad-wipe and last-squad-standing
 ```
@@ -244,6 +245,8 @@ as evidence that the overwrite risk extends to loader extension points. The thre
 callbacks above are the actual exposure.
 
 ### Friendly fire
+
+Lives in `_friendlyfire.gsc`.
 
 `replacefunc( maps\mp\_utility::attackerishittingteam, ::rsg_hitting_squad )`, which
 returns true when attacker and victim are in the same squad (and otherwise reproduces
