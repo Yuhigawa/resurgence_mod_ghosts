@@ -33,6 +33,7 @@ init()
 	level.rsg.installs = 0;
 	level.rsg.squadsize = max( 1, getdvarint( "scr_resurgence_squadsize" ) );
 	level.rsg.redeploydelay = getdvarint( "scr_resurgence_redeploydelay" );
+	level.rsg.spawnmindist = getdvarint( "scr_resurgence_spawn_min_dist" );
 	level.rsg.primary = getdvar( "scr_resurgence_primary" );
 	level.rsg.secondary = getdvar( "scr_resurgence_secondary" );
 
@@ -40,7 +41,10 @@ init()
 
 	scripts\mp\resurgence\_squads::init();
 	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
+	{
 		scripts\mp\resurgence\_redeploy::init();
+		scripts\mp\resurgence\_friendlyfire::init();
+	}
 
 	install_callbacks();
 	level thread reassert_callbacks();
@@ -52,6 +56,7 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_enabled", 0 );
 	setdvarifuninitialized( "scr_resurgence_squadsize", 2 );
 	setdvarifuninitialized( "scr_resurgence_redeploydelay", 15 );
+	setdvarifuninitialized( "scr_resurgence_spawn_min_dist", 200 );
 	setdvarifuninitialized( "scr_resurgence_primary", "" );
 	setdvarifuninitialized( "scr_resurgence_secondary", "" );
 	setdvarifuninitialized( "scr_resurgence_zone_enabled", 1 );
@@ -98,7 +103,9 @@ install_callbacks()
 
 	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
 		scripts\mp\resurgence\_redeploy::install_callbacks();
-	rsg_log( "install_callbacks (pass " + level.rsg.installs + "): onrespawndelay set" );
+
+	scripts\mp\resurgence\_spawning::install_callbacks();
+	rsg_log( "install_callbacks (pass " + level.rsg.installs + "): onrespawndelay + getspawnpoint set" );
 }
 
 rsg_on()

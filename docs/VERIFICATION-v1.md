@@ -92,3 +92,55 @@ removing the temporary debug watcher I sliced out `rsg_mayspawn` along with it. 
 `replacefunc` then referenced a missing function, `init()` died, and the entire mod went
 silent — no error, just an empty log. Caught immediately because the verification step
 expects specific lines and got none.
+
+## Task 6 — spawning
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| FFA spawn classname | **PASS — `mp_dm_spawn` confirmed, 15 points** | probed six candidates: `mp_dm_spawn` 15, `mp_tdm_spawn` 14, `mp_tdm_spawn_axis_start` 9, `mp_tdm_spawn_allies_start` 9, `mp_dm_spawn_start` 0, `mp_global_intermission` 0 |
+| Solo path (no living squadmate) | **PASS** | `getspawnpoint: Dsso no living squadmate, random of 15` |
+| Squadmate path | **PASS** | `getspawnpoint: Dsso near My Flaws, 193 units, from 15 candidates` |
+| Re-evaluated per spawn, not cached | **PASS** | same pair reported 506 and 1053 units on different deaths |
+| Squadmates do not spawn stacked | **PASS after fix** | see below |
+
+**Bug found and fixed.** The closest spawn struct to a living squadmate is usually the one
+he is standing on, so the first implementation produced spawns **0 units apart** — partners
+stacked on a single point, both killed by one grenade and at risk of spawn collision. Added
+`scr_resurgence_spawn_min_dist` (default 200) and `closest_to_but_not_on()`: take the
+closest candidate at least that far away, falling back to the absolute closest only if
+nothing qualifies. After the fix, observed distances were 506, 1053 and 1454 units.
+
+**Known limitation, not a bug.** With only 15 spawn points on this map, "near your
+squadmate" is coarse — the nearest qualifying point was sometimes 1454 units away. The rule
+picks the closest legal point; it cannot invent one.
+
+**Known regression, flagged for a decision.** Overriding `level.getspawnpoint` discards
+whatever enemy-proximity scoring stock `dm` applied, so a redeploy can place you next to an
+enemy. The spec only specifies squadmate proximity, so v1 matches the spec, but this is a
+real loss of vanilla behaviour and should be an explicit choice rather than an oversight.
+
+## Task 7 — friendly fire
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Squadmate damage blocked | **PASS** | 202 `friendlyfire: blocked` lines, every pair a correct squad member |
+| Non-squadmate damage still lands | **PASS** | bracketing run, see below |
+| Stock behaviour returns with the mod off | **NOT RUN** | `init()` is unreachable when disabled, so the stock function is untouched by construction; not separately measured |
+
+**How non-squadmate damage was verified without a human client.** Bots lock into a futile
+duel with their own partner — they spawn together (Task 6) and have no squad awareness, so
+every shot they fire is blocked and the log showed 202 blocks with zero damage events. That
+looks identical to "the hook blocks everything", so the two cases were bracketed by
+squad size instead:
+
+| Config | FF blocks | Damage events | Kills |
+| --- | --- | --- | --- |
+| `squadsize 1` — no pair is ever a squadmate | 0 | 8 | 3 |
+| `squadsize 4` — every pair is a squadmate | 123 | 0 | 0 |
+
+Damage lands when it should and is blocked when it should. Both halves proven.
+
+**Consequence for later tasks: bots are poor opponents in this mode.** Because they shoot
+their own squadmate and get blocked, squads do not reliably eliminate each other, so Task 10
+(wipes and last-squad-standing) cannot be driven by bot combat alone. It will need either
+`squadsize 1` to force hostility, or a human client.
