@@ -48,7 +48,7 @@ check_wipes()
 		if ( all_eliminated( var_1 ) )
 			continue;
 
-		iprintln( "RESURGENCE: squad " + var_0 + " wiped" );
+		iprintln( squad_names( var_0 ) + " eliminated" );
 		scripts\mp\_resurgence::rsg_log( "win: squad " + var_0 + " wiped, eliminating " + var_1.size + " member(s)" );
 
 		foreach ( var_2 in var_1 )
@@ -83,7 +83,13 @@ check_last_squad()
 			return;
 	}
 
-	iprintlnbold( "RESURGENCE: squad " + var_0[0] + " wins" );
+	// "squad 0 wins" is meaningless to a player who does not know which squad
+	// he is in -- a human won a match and could not tell. Name the winners,
+	// and tell them directly.
+	iprintlnbold( squad_names( var_0[0] ) + " WINS" );
+
+	foreach ( var_4 in scripts\mp\resurgence\_squads::squad_members( var_0[0] ) )
+		var_4 iprintlnbold( "YOU WIN" );
 	scripts\mp\_resurgence::rsg_log( "win: squad " + var_0[0] + " is last standing, ending match" );
 	scripts\mp\resurgence\_squads::dump_squads();
 
@@ -106,4 +112,24 @@ all_eliminated( members )
 	}
 
 	return 1;
+}
+
+// Readable list of a squad's members, for messages players actually see.
+squad_names( squadid )
+{
+	var_0 = scripts\mp\resurgence\_squads::squad_members( squadid );
+	var_1 = "";
+
+	for ( var_2 = 0; var_2 < var_0.size; var_2++ )
+	{
+		if ( var_2 > 0 )
+			var_1 = var_1 + " + ";
+
+		var_1 = var_1 + var_0[var_2].name;
+	}
+
+	if ( var_1 == "" )
+		var_1 = "squad " + squadid;
+
+	return var_1;
 }

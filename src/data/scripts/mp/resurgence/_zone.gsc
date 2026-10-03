@@ -35,6 +35,7 @@ run()
 	var_4 = getdvarint( "scr_resurgence_zone_shrink" );
 
 	scripts\mp\_resurgence::rsg_log( "zone: center " + level.rsg_center + ", radius " + level.rsg_radius + ", " + var_0 + " phases" );
+	markers_create();
 	level thread damage_loop();
 
 	for ( var_5 = 1; var_5 <= var_0; var_5++ )
@@ -64,10 +65,12 @@ shrink_to( target, seconds )
 	for ( var_2 = 1; var_2 <= var_0; var_2++ )
 	{
 		level.rsg_radius = var_1 + ( target - var_1 ) * var_2 / var_0;
+		markers_update();
 		wait 0.1;
 	}
 
 	level.rsg_radius = target;
+	markers_update();
 }
 
 damage_loop()
@@ -132,4 +135,58 @@ map_centroid()
 		var_1 = var_1 + var_2.origin;
 
 	return var_1 / var_0.size;
+}
+
+// The ring drawn on the compass as a circle of objective markers.
+//
+// There is no engine primitive for "draw a circle on the minimap", so the
+// circumference is approximated by N objective icons that are repositioned
+// as the ring shrinks. Indices start high because gametypes use the low ones
+// and nothing else in this build touches the objective API.
+markers_create()
+{
+	level.rsg.markercount = getdvarint( "scr_resurgence_zone_markers" );
+
+	if ( level.rsg.markercount <= 0 )
+	{
+		scripts\mp\_resurgence::rsg_log( "zone: markers disabled" );
+		return;
+	}
+
+	for ( var_0 = 0; var_0 < level.rsg.markercount; var_0++ )
+		objective_add( marker_index( var_0 ), "active", marker_origin( var_0 ) );
+
+	scripts\mp\_resurgence::rsg_log( "zone: created " + level.rsg.markercount + " ring markers" );
+}
+
+markers_update()
+{
+	if ( !isdefined( level.rsg.markercount ) || level.rsg.markercount <= 0 )
+		return;
+
+	for ( var_0 = 0; var_0 < level.rsg.markercount; var_0++ )
+		objective_position( marker_index( var_0 ), marker_origin( var_0 ) );
+}
+
+markers_delete()
+{
+	if ( !isdefined( level.rsg.markercount ) || level.rsg.markercount <= 0 )
+		return;
+
+	for ( var_0 = 0; var_0 < level.rsg.markercount; var_0++ )
+		objective_delete( marker_index( var_0 ) );
+
+	level.rsg.markercount = 0;
+}
+
+marker_index( n )
+{
+	return 40 + n;
+}
+
+marker_origin( n )
+{
+	var_0 = 360 / level.rsg.markercount * n;
+	var_1 = level.rsg_center + ( cos( var_0 ) * level.rsg_radius, sin( var_0 ) * level.rsg_radius, 0 );
+	return var_1;
 }

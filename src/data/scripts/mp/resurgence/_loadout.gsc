@@ -30,57 +30,83 @@ install_callbacks()
 	level.bypassclasschoicefunc = ::rsg_bypassclasschoice;
 }
 
-// Replaces _class::giveloadout. One cross-script hook covers all three call
-// sites -- the else branch at _playerlogic.gsc:699 and both grace-period
-// class-change paths at _menus.gsc:182 and :598 -- which is what we need,
-// because those two cannot be guarded by editing the file (ADR-6).
-install_loadout_hook()
+// Applies the kit AFTER the stock loadout has run, instead of replacing it.
+//
+// The first version replaced _class::giveloadout outright. That skipped
+// whatever the stock loadout does besides handing out guns -- including
+// assigning the player's character model, which nothing in the spawn path
+// does and which aliens.gsc:1132 sets explicitly inside its own loadout
+// function. Result: players spawned with no body and were invisible.
+// replacefunc offers no way to call the original, so the kit cannot be
+// applied from inside that hook at all.
+//
+// Instead, each player runs a watcher that waits for its own spawn, lets the
+// stock loadout complete, and then strips and re-arms. One frame of the
+// class weapon is the price of keeping the model.
+init_player_watcher()
 {
-	replacefunc( maps\mp\gametypes\_class::giveloadout, ::rsg_giveloadout );
+	level thread watch_spawns();
 }
 
-// Runs in place of the stock loadout, so it must be a CLEAR SLATE: weapons
-// taken, action slots and perks cleared, killstreaks off, then exactly what
-// we want granted. Shape follows aliens.gsc:1107-1211, which is the working
-// precedent for this hook on this build.
-rsg_giveloadout( team, class, loadoutonly )
+watch_spawns()
 {
-	self takeallweapons();
-	self.changingweapon = undefined;
-	self.loadoutprimaryattachments = [];
-	self.loadoutsecondaryattachments = [];
-	maps\mp\_utility::_setactionslot( 1, "" );
-	maps\mp\_utility::_setactionslot( 2, "" );
-	maps\mp\_utility::_setactionslot( 3, "" );
-	maps\mp\_utility::_setactionslot( 4, "" );
-	maps\mp\_utility::_clearperks();
+	for (;;)
+	{
+		level waittill( "connected", var_0 );
+		var_0 thread kit_on_spawn();
+	}
+}
 
-	// Killstreaks must die HERE. They are granted by the loadout we are
-	// replacing, so clearing them before this point would accomplish nothing.
+kit_on_spawn()
+{
+	self endon( "disconnect" );
+
+	for (;;)
+	{
+		self waittill( "spawned_player" );
+
+		// Let spawnplayer finish: _class::setclass at :694 and
+		// _class::giveloadout at :696 both run after the "spawned" notify.
+		wait 0.1;
+
+		if ( !scripts\mp\resurgence\_squads::rsg_is_alive( self ) )
+			continue;
+
+		apply_kit();
+	}
+}
+
+apply_kit()
+{
+	// Killstreaks must go after the stock loadout granted them.
 	self.killstreaktype = "none";
-	self notify( "changed_kit" );
-	self notify( "giveLoadout" );
+	maps\mp\_utility::_setactionslot( 4, "" );
 
 	if ( level.rsg.primary == "" )
 	{
-		scripts\mp\_resurgence::rsg_log( "loadout: " + self.name + " no primary set, kit skipped" );
+		scripts\mp\_resurgence::rsg_log( "loadout: " + self.name + " killstreaks stripped, class kit kept" );
 		return;
 	}
 
+	self takeallweapons();
 	self giveweapon( level.rsg.primary );
 	self setspawnweapon( level.rsg.primary );
 
 	if ( level.rsg.secondary != "" )
 		self giveweapon( level.rsg.secondary );
 
+	self switchtoweapon( level.rsg.primary );
 	scripts\mp\_resurgence::rsg_log( "loadout: " + self.name + " kit " + level.rsg.primary + " / " + level.rsg.secondary );
 }
 
+// Both predicates in _menus.gsc:434 must be false for a human to take the
+// bypassclasschoice() branch, since precedence there is a || (b && c).
 rsg_no_class_choice()
 {
 	return 0;
 }
 
+// Consumed by bypassclasschoice() at _menus.gsc:518-522.
 rsg_bypassclasschoice()
 {
 	return "class0";

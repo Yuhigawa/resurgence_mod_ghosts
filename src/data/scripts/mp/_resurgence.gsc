@@ -47,7 +47,7 @@ init()
 		scripts\mp\resurgence\_redeploy::init();
 		scripts\mp\resurgence\_friendlyfire::init();
 		scripts\mp\resurgence\_loadout::init();
-		scripts\mp\resurgence\_loadout::install_loadout_hook();
+		scripts\mp\resurgence\_loadout::init_player_watcher();
 	}
 
 	install_callbacks();
@@ -70,6 +70,7 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_hold", 35 );
 	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
+	setdvarifuninitialized( "scr_resurgence_zone_markers", 16 );
 	setdvarifuninitialized( "scr_resurgence_debug", 0 );
 }
 

@@ -78,6 +78,7 @@ eliminate( player )
 
 	player.rsg_eliminated = 1;
 	player notify( "end_respawn" );
+	player iprintlnbold( "ELIMINATED - your squad is out" );
 	player maps\mp\_utility::clearlowermessage( "spawn_info" );
 	scripts\mp\_resurgence::rsg_log( "eliminate: " + player.name + " (squad " + player.rsg_squad + ")" );
 
