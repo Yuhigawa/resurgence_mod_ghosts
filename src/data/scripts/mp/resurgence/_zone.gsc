@@ -36,6 +36,7 @@ run()
 
 	scripts\mp\_resurgence::rsg_log( "zone: center " + level.rsg_center + ", radius " + level.rsg_radius + ", " + var_0 + " phases" );
 	markers_create();
+	level thread hud_watch();
 	level thread damage_loop();
 
 	for ( var_5 = 1; var_5 <= var_0; var_5++ )
@@ -143,9 +144,15 @@ map_centroid()
 // circumference is approximated by N objective icons that are repositioned
 // as the ring shrinks. Indices start high because gametypes use the low ones
 // and nothing else in this build touches the objective API.
+// An objective marker renders ONLY if it is given an icon material. A
+// four-variant probe settled it: plain, allies-assigned and axis-assigned
+// markers were all invisible, while the one with an explicit icon showed up
+// as a dot on the compass. objective_add alone succeeds server-side and draws
+// nothing, which is why this looked broken for so long.
 markers_create()
 {
 	level.rsg.markercount = getdvarint( "scr_resurgence_zone_markers" );
+	level.rsg.markericon = getdvar( "scr_resurgence_zone_marker_icon" );
 
 	if ( level.rsg.markercount <= 0 )
 	{
@@ -154,7 +161,11 @@ markers_create()
 	}
 
 	for ( var_0 = 0; var_0 < level.rsg.markercount; var_0++ )
+	{
 		objective_add( marker_index( var_0 ), "active", marker_origin( var_0 ) );
+		objective_icon( marker_index( var_0 ), level.rsg.markericon );
+		objective_state( marker_index( var_0 ), "active" );
+	}
 
 	scripts\mp\_resurgence::rsg_log( "zone: created " + level.rsg.markercount + " ring markers" );
 }
@@ -189,4 +200,97 @@ marker_origin( n )
 	var_0 = 360 / level.rsg.markercount * n;
 	var_1 = level.rsg_center + ( cos( var_0 ) * level.rsg_radius, sin( var_0 ) * level.rsg_radius, 0 );
 	return var_1;
+}
+
+
+// The safe-zone readout.
+//
+// A drawn circle is not reachable: objectives do not render here. What a
+// player actually needs when the gas closes is which way to run and how far,
+// so that is shown as text, in a HUD element modelled on the one at
+// mp_alien_beacon.gsc:2208.
+hud_watch()
+{
+	for (;;)
+	{
+		level waittill( "connected", var_0 );
+		var_0 thread player_hud();
+	}
+}
+
+player_hud()
+{
+	self endon( "disconnect" );
+
+	self.rsg_hud = newclienthudelem( self );
+	// Tucked under the minimap on the left, not centre screen: at 1.4 scale in
+	// the middle it sat right over the player's view.
+	self.rsg_hud.x = 30;
+	self.rsg_hud.y = 310;
+	self.rsg_hud.alignx = "left";
+	self.rsg_hud.aligny = "top";
+	self.rsg_hud.horzalign = "left";
+	self.rsg_hud.vertalign = "top";
+	self.rsg_hud.fontscale = 1.2;
+	self.rsg_hud.foreground = 1;
+	self.rsg_hud.sort = 10;
+	self.rsg_hud.alpha = 1;
+
+	for (;;)
+	{
+		wait 1;
+
+		if ( !isdefined( self.rsg_hud ) )
+			return;
+
+		if ( !isdefined( level.rsg_center ) || !isdefined( level.rsg_radius ) )
+		{
+			self.rsg_hud settext( "" );
+			continue;
+		}
+
+		var_0 = distance2d( self.origin, level.rsg_center );
+
+		// CoD units are roughly inches; ~40 per metre reads naturally.
+		if ( var_0 > level.rsg_radius )
+			self.rsg_hud settext( "MOVE IN  " + int( ( var_0 - level.rsg_radius ) / 40 ) + "m  " + bearing_to( level.rsg_center ) );
+		else
+			self.rsg_hud settext( "RING EDGE  " + int( ( level.rsg_radius - var_0 ) / 40 ) + "m" );
+	}
+}
+
+// Compass bearing from the player to a point, as a readable direction.
+bearing_to( point )
+{
+	var_0 = vectortoangles( point - self.origin );
+	var_1 = var_0[1];
+
+	while ( var_1 < 0 )
+		var_1 = var_1 + 360;
+
+	while ( var_1 >= 360 )
+		var_1 = var_1 - 360;
+
+	if ( var_1 < 22.5 || var_1 >= 337.5 )
+		return "E";
+
+	if ( var_1 < 67.5 )
+		return "NE";
+
+	if ( var_1 < 112.5 )
+		return "N";
+
+	if ( var_1 < 157.5 )
+		return "NW";
+
+	if ( var_1 < 202.5 )
+		return "W";
+
+	if ( var_1 < 247.5 )
+		return "SW";
+
+	if ( var_1 < 292.5 )
+		return "S";
+
+	return "SE";
 }

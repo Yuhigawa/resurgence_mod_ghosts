@@ -72,6 +72,12 @@ kit_on_spawn()
 		if ( !scripts\mp\resurgence\_squads::rsg_is_alive( self ) )
 			continue;
 
+		// Restore this player's base vision set on every spawn. The global
+		// clear in _resurgence::ensure_vision covers players present when
+		// play begins; this covers everyone else, including anyone who
+		// joins mid-match after the clear has already happened.
+		self maps\mp\_utility::restorebasevisionset( 0 );
+
 		apply_kit();
 	}
 }

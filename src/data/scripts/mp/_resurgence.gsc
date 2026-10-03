@@ -52,6 +52,7 @@ init()
 
 	install_callbacks();
 	level thread reassert_callbacks();
+	level thread ensure_vision();
 	level thread debug_player_state();
 }
 
@@ -70,7 +71,8 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_hold", 35 );
 	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
-	setdvarifuninitialized( "scr_resurgence_zone_markers", 16 );
+	setdvarifuninitialized( "scr_resurgence_zone_markers", 24 );
+	setdvarifuninitialized( "scr_resurgence_zone_marker_icon", "compassiconfriendly" );
 	setdvarifuninitialized( "scr_resurgence_debug", 0 );
 }
 
@@ -152,4 +154,26 @@ debug_player_state()
 			rsg_log( "state: " + var_0.name + " isalive=" + isalive( var_0 ) + " sessionstate=" + var_0.sessionstate + " reallyalive=" + var_0 maps\mp\_utility::isreallyalive() + " isai=" + isai( var_0 ) + " isplayer=" + isplayer( var_0 ) );
 		}
 	}
+}
+
+// The map renders pitch black when the match-start sequence is interrupted.
+//
+// matchstarttimer_internal (_gamelogic.gsc:1091) applies the dark "mpIntro"
+// vision set and the clear that follows it (visionsetnaked( "", 3.0 ) at
+// :1122) only runs if that function RETURNS. It carries
+// level endon( "match_start_timer_beginning" ), and matchstarttimer fires
+// that notify on every call, so an interrupted or restarted start sequence
+// leaves the intro vision applied forever. Our matches end fast and cycle
+// repeatedly, which is exactly that stress -- observed as a fully unlit map
+// with working geometry, HUD and minimap.
+//
+// Clearing it ourselves once play begins is cheap and idempotent.
+ensure_vision()
+{
+	level endon( "game_ended" );
+
+	level waittill( "prematch_over" );
+
+	visionsetnaked( "", 0 );
+	rsg_log( "vision: cleared the intro vision set" );
 }
