@@ -31,6 +31,11 @@
 
 This makes each task's verification slower than a unit test but no less binding: **no step may be checked off on the basis of reading the code.** Every `- [ ]` that says "observe" requires the actual console line or in-game observation. If a step cannot be verified, say so and stop rather than marking it done.
 
+Multiple players come from bots: `spawnBot` (see Task 1 Step 6). Bots are real entities in
+`level.players`, so they are squad-assigned, killable, and count for wipe detection — but
+they will not walk out of the ring on command, so Task 9's out-of-ring damage must be
+verified with a real client.
+
 `rsg_log()` writes via `logstring()`, which is attested in the local overlay (`_gamelogic.gsc:97`). Console visibility of `logstring` on this server build is itself unproven — **Task 2 Step 2 establishes it**, and if `logstring` is not visible, every later task substitutes `iprintln()` (in-game text, attested at `_gamelogic.gsc:96`) as the debug channel. Do not proceed past Task 2 without a working debug channel; everything downstream depends on being able to see output.
 
 ## File Structure
@@ -38,6 +43,7 @@ This makes each task's verification slower than a unit test but no less binding:
 | Path | Responsibility |
 | --- | --- |
 | `deploy.sh` | Copy `src/data/` into `$GHOSTS_DIR/data/`. Never deletes. Prints what it wrote. |
+| `config/server.cfg` | Server config: gametype, the Resurgence dvars, bot auto-join, map rotation. Deployed to the install root. |
 | `docs/RUNNING.md` | How to start the server and where its console output goes. Written in Task 1. |
 | `src/data/scripts/mp/_resurgence.gsc` | Entry point: dvar registration, `level.rsg` state, `rsg_log()`, module wiring, `install_callbacks()`. No gameplay logic. |
 | `src/data/scripts/mp/resurgence/_squads.gsc` | Sole owner of squad membership and the queries over it. |
@@ -58,6 +64,7 @@ Dependency order: `_squads` is the root — `_redeploy`, `_spawning`, `_friendly
 
 **Files:**
 - Create: `deploy.sh`
+- Create: `config/server.cfg`
 - Create: `docs/RUNNING.md`
 - Create: `src/data/scripts/mp/resurgence/.gitkeep`
 - Modify: `README.md`
@@ -101,6 +108,13 @@ while IFS= read -r -d '' file; do
 done < <(find "$SRC" -type f ! -name '.gitkeep' -print0)
 
 echo "deployed $count file(s)"
+
+# server.cfg lives beside the binary, not under data/. Nothing in the
+# binary auto-execs it; it is named on the command line (+exec server.cfg).
+if [ -f "$(dirname "$0")/config/server.cfg" ]; then
+    cp "$(dirname "$0")/config/server.cfg" "$GHOSTS_DIR/server.cfg"
+    echo "  server.cfg -> $GHOSTS_DIR/server.cfg"
+fi
 ```
 
 - [ ] **Step 2: Make it executable and run it against an empty source tree**
@@ -121,23 +135,95 @@ cd ~/ws/personal/resurgence_mod_ghost && GHOSTS_DIR=/tmp/nope ./deploy.sh; echo 
 
 Expected: the `no data/ directory under /tmp/nope` error and `exit=1`. A deploy script that silently writes to the wrong place is worse than none.
 
-- [ ] **Step 4: Establish how the server runs, and write it down**
+- [ ] **Step 4: Write `config/server.cfg`**
 
-Find the launch path. Run these and read the output:
+`iw6x.exe` is CBServers' iw6-mod and ships a dedicated-server component — confirmed by
+the RTTI symbols `component@dedicated` / `component@dedicated_info`, `isdedicatedserver`,
+the banner strings `iw6-mod Dedicated Server` and `Server started!`, and the dvars
+`sv_hostname`, `sv_maxclients`, `sv_mapRotation`, `net_port`, `sv_lanOnly`, `map_rotate`.
+The dedicated path sets `onlinegame 1`, `xblive_privatematch 0`, calls
+`xstartprivatematch` itself and preloads the `*_mp` fastfiles, so it brings up MP with no
+lobby. There is **no** `server.cfg` string literal in the binary — nothing auto-execs it,
+so it must be named on the command line.
 
-```bash
-ls /mnt/d/games/cod_cbservers/ghosts_game_files/*.exe /mnt/d/games/cod_cbservers/ghosts_game_files/*.cfg 2>/dev/null; ls /mnt/d/games/cod_cbservers/
+Create `config/server.cfg`:
+
+```
+sv_hostname "Resurgence Test"
+sv_maxclients 18
+g_gametype dm
+scr_friendlyfire 0
+scr_dm_numlives 0
+scr_dm_playerrespawndelay 0
+scr_dm_scorelimit 0
+scr_dm_timelimit 0
+
+scr_resurgence_enabled 1
+scr_resurgence_debug 1
+scr_resurgence_squadsize 2
+scr_resurgence_zone_enabled 0
+
+sv_botsAutoJoin 1
+
+sv_mapRotation "gametype dm map mp_prisonbreak"
 ```
 
+Both limits are `0` and the ring starts **off** on purpose: the first several verification
+cycles should not be fighting a shrinking zone or a match that ends on the clock. Task 9
+turns the zone on.
+
+- [ ] **Step 5: Start the server**
+
+From the install directory:
+
 ```bash
-grep -rniE "dedicated|g_gametype|net_port|sv_" /mnt/d/games/cod_cbservers/ghosts_game_files/players2/config_mp.cfg | head -30
+cd /mnt/d/games/cod_cbservers/ghosts_game_files && ./iw6x.exe -dedicated +set net_port 28960 +exec server.cfg +map_rotate
 ```
 
-The install has `iw6x.exe`, `iw6mp64_ship.exe` and `main/fileSysCheck.cfg`; `players2/config_mp.cfg` is the client config. Determine from the above (and from the CB-SERVERS launcher if one is present in the parent directory) the exact command that starts a **dedicated server** and where its console output appears — a console window, a log file under the install, or stdout.
+If `-dedicated` is not picked up, try `+set dedicated 2` (`2` = internet, `1` = LAN) — the
+dvar exists in the binary, but the arg parser's accepted spelling is not visible because
+the dash is stripped before the string lands. `-headless` additionally suppresses the
+window.
 
-Write `docs/RUNNING.md` containing, concretely: the exact launch command, the config file that sets `g_gametype dm` / `scr_friendlyfire 0` / `scr_dm_numlives 0` / `scr_resurgence_enabled 1`, where console output lands, and how to join as a client. **If the launch method cannot be determined from the files, stop and ask the user** — every later task's verification depends on it, and guessing wastes the whole plan.
+Expected: the `iw6-mod Dedicated Server` banner and `Server started!`. A useful
+independent confirmation: `verifydedicatedconfiguration` (`_gamelogic.gsc:1664-1665`) runs
+only when `getdvar( "dedicated" )` is `dedicated LAN server` or
+`dedicated internet server`, so if that dvar holds either string, the server itself agrees
+it is dedicated.
 
-- [ ] **Step 5: Point README at reality**
+- [ ] **Step 6: Get a second and third client in — verify bots work**
+
+Several later tasks need 2-4 players, and the two most valuable (redeploy in Task 5,
+win conditions in Task 10) are unreachable with one client. iw6-mod has bot support:
+`spawnBot` is a registered console command (the mangled symbol
+`bot_team_join@...@bots@@` confirms a `bots` module), alongside `addbot`,
+`addtestclient` / `spawntestclient` / `canspawntestclient`, and the `sv_botsAutoJoin`
+dvar set in Step 4.
+
+On the running server console, run `spawnBot 3`. If that spelling is rejected, try
+`addbot`, then `spawntestclient`.
+
+Expected: three bots join and appear on the scoreboard. Confirm they are real player
+entities rather than UI placeholders — the local GSC is full of `isai( self )` branches
+and `level.bot_funcs` (`_playerlogic.gsc:687-688`, `_damage.gsc:854-855`), which only run
+for entities in `level.players`. **This matters for Task 4**: `_squads` assigns on
+`level waittill( "connected", player )`, so if bots do not fire `connected` they will
+never be squad-assigned, and that changes how every later task is verified. Note in
+`docs/RUNNING.md` which command worked and whether bots get squad-assigned once Task 4
+lands.
+
+If no bot command works, stop and decide the multi-client route with the user before
+writing nine verification cycles that assume more than one player — a second machine on
+the LAN with `sv_lanOnly 1` is the fallback.
+
+- [ ] **Step 7: Write `docs/RUNNING.md`**
+
+Record concretely: the launch command that actually worked (including which `dedicated`
+spelling), where console output appears (window, log file, or stdout), the bot command
+that worked, how to join as a client, and that `config/server.cfg` is deployed to the
+install root by `deploy.sh`. Write what you observed, not what this plan predicted.
+
+- [ ] **Step 8: Point README at reality**
 
 In `README.md`, replace the line
 
@@ -154,12 +240,16 @@ with
 
 and delete the line `Nothing is implemented yet — the repo currently holds the design only.`
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd ~/ws/personal/resurgence_mod_ghost
-git add deploy.sh docs/RUNNING.md README.md src/data/scripts/mp/resurgence/.gitkeep
-git commit -m "Add deploy.sh and document how to run the server"
+git add deploy.sh config/server.cfg docs/RUNNING.md README.md src/data/scripts/mp/resurgence/.gitkeep
+git commit -m "Add deploy.sh, server.cfg, and how to run the server
+
+iw6x.exe is iw6-mod and ships a dedicated component; nothing auto-execs
+server.cfg, so it is passed with +exec. Bots come from spawnBot, which
+makes the multi-client verification steps reachable."
 ```
 
 ---
@@ -576,7 +666,9 @@ Restart with the mod on and `scr_resurgence_debug 1`, then join with **one** cli
 
 - [ ] **Step 4: Verify duo packing with four clients**
 
-Join with four clients (or bots, if `docs/RUNNING.md` records how). Expected, with `squadsize 2`: clients land in squads `0, 0, 1, 1` in join order, and `dump_squads` shows exactly that.
+Join with one real client, then run `spawnBot 3` on the console (or whichever command Task 1 Step 6 recorded). Expected, with `squadsize 2`: the four land in squads `0, 0, 1, 1` in join order, and `dump_squads` shows exactly that.
+
+If the bots appear on the scoreboard but `dump_squads` reports them `UNASSIGNED`, bots do not fire `level waittill( "connected" )` on this build. Fix it here, not later: also assign in `_squads` from a sweep over `level.players` inside `dump_squads`'s caller, or hook `level.bot_funcs["player_spawned"]`. Every later task's multi-player verification depends on bots being squad members.
 
 Then set `scr_resurgence_squadsize 4`, restart, rejoin all four. Expected: all four in squad `0`. This proves the dvar is read rather than the `2` being hardcoded.
 
@@ -1610,10 +1702,13 @@ git commit -m "Record v1 verification results and tuned zone defaults"
 
 ## Deviations to expect
 
-This plan is written against a build whose stock scripts cannot be read. Three things are most likely to need adjusting, and each has its response written into the task that meets it:
+This plan is written against a build whose stock scripts cannot be read. Four things are most likely to need adjusting, and each has its response written into the task that meets it:
 
 1. **Same-file `replacefunc`** (Task 2 Step 3) — if it does not work, `_redeploy` edits `mayspawn` in a copied `_playerlogic.gsc` instead. Fifth overlay edit.
 2. **The FFA spawn classname** (Task 6 Step 3) — `mp_dm_spawn` is inferred. The module logs and falls back to the tdm array, which `aliens.gsc:787` attests.
-3. **MP weapon names** (Task 8 Step 4) — unverifiable from `data/`. The passthrough default means the module works without them.
+3. **The bot command spelling** (Task 1 Step 6) — `spawnBot` is the best candidate of
+   four attested strings; the fallbacks are `addbot` and `spawntestclient`, and a LAN
+   second machine if none work.
+4. **MP weapon names** (Task 8 Step 4) — unverifiable from `data/`. The passthrough default means the module works without them.
 
 Anything else that contradicts the spec's "verified hook points" table should be recorded in the task's commit message and reported, not worked around silently.
