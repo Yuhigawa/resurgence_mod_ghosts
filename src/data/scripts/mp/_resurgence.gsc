@@ -71,7 +71,7 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_hold", 35 );
 	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
-	setdvarifuninitialized( "scr_resurgence_zone_markers", 24 );
+	setdvarifuninitialized( "scr_resurgence_zone_markers", 36 );
 	setdvarifuninitialized( "scr_resurgence_zone_marker_icon", "compassiconfriendly" );
 	setdvarifuninitialized( "scr_resurgence_debug", 0 );
 }
