@@ -40,11 +40,14 @@ init()
 	rsg_log( "init: enabled, squadsize " + level.rsg.squadsize + ", redeploy " + level.rsg.redeploydelay + "s" );
 
 	scripts\mp\resurgence\_squads::init();
+	scripts\mp\resurgence\_zone::init();
+	scripts\mp\resurgence\_win::init();
 	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
 	{
 		scripts\mp\resurgence\_redeploy::init();
 		scripts\mp\resurgence\_friendlyfire::init();
 		scripts\mp\resurgence\_loadout::init();
+		scripts\mp\resurgence\_loadout::install_loadout_hook();
 	}
 
 	install_callbacks();
@@ -58,14 +61,14 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_squadsize", 2 );
 	setdvarifuninitialized( "scr_resurgence_redeploydelay", 15 );
 	setdvarifuninitialized( "scr_resurgence_spawn_min_dist", 200 );
-	setdvarifuninitialized( "scr_resurgence_primary", "" );
-	setdvarifuninitialized( "scr_resurgence_secondary", "" );
+	setdvarifuninitialized( "scr_resurgence_primary", "iw6_imbel_mp" );
+	setdvarifuninitialized( "scr_resurgence_secondary", "iw6_p226_mp" );
 	setdvarifuninitialized( "scr_resurgence_zone_enabled", 1 );
 	setdvarifuninitialized( "scr_resurgence_zone_phases", 5 );
-	setdvarifuninitialized( "scr_resurgence_zone_radius_start", 4000 );
-	setdvarifuninitialized( "scr_resurgence_zone_radius_end", 400 );
-	setdvarifuninitialized( "scr_resurgence_zone_hold", 45 );
-	setdvarifuninitialized( "scr_resurgence_zone_shrink", 30 );
+	setdvarifuninitialized( "scr_resurgence_zone_radius_start", 2600 );
+	setdvarifuninitialized( "scr_resurgence_zone_radius_end", 250 );
+	setdvarifuninitialized( "scr_resurgence_zone_hold", 35 );
+	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
 	setdvarifuninitialized( "scr_resurgence_debug", 0 );
 }

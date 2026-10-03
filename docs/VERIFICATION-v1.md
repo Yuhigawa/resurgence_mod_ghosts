@@ -180,3 +180,74 @@ precedence is `a || (b && c)` — so `_loadout::init()` replaces **both**
 (Esc → Choose Class), selected a class, spawned — and then the game died. That was not a
 mod fault: the server was restarted underneath them to deploy this very fix. No crash dumps
 were written. Do not restart the server while someone is connected.
+
+## Task 8 (completed) — the fixed kit
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Clear-slate kit replaces the class loadout | **PASS** | `RSG: loadout: My Flaws kit iw6_imbel_mp / iw6_p226_mp` for every player |
+| It really replaced, not layered | **PASS** | the kill log afterwards contains **only** those two weapons (13 × `iw6_p226_mp`, 6 × `iw6_imbel_mp`) where it previously showed eight different ones |
+| Killstreaks off | **PASS (indirect)** | no killstreak weapon appears in any kill line across runs; `self.killstreaktype = "none"` is set inside the hook, after the point where the stock loadout would have granted them |
+| Weapon names | **RESOLVED** | `iw6_imbel_mp` and `iw6_p226_mp` work as bare names; harvested from kill lines, not guessed |
+
+One cross-script `replacefunc` on `_class::giveloadout` covers all three call sites,
+including the two `_menus.gsc` grace-period paths that ADR-6 made un-editable.
+
+## Task 9 — the ring
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Off when disabled | **PASS** | `RSG: zone: disabled`, and `_spawning` keeps reporting the full 15 candidates |
+| Centre derived from the map | **PASS** | `zone: center (-196, -399.333, 986.447)` — a real point inside the map, recomputed per match |
+| Phases hold and shrink on schedule | **PASS** | `phase 1/3 shrinking 3000 -> 2100`, `2/3 2100 -> 1200`, `3/3 1200 -> 300` |
+| Out-of-ring detection | **PASS** | `zone: StarBerry outside at 1878 / 1762`, once per crossing |
+| Damage actually lands | **PASS** | 16 damage events of exactly `scr_resurgence_zone_damage` (25 in the lethal run) |
+| Ring deaths feed wipe detection | **PASS** | both members of squad 0 died to the ring with no attacker, `win: squad 0 wiped`, then `squad 1 is last standing` |
+| Spawns respect the ring | **PASS** | `_spawning::in_zone` filters candidates once `level.rsg_radius` exists |
+
+**`dodamage` must be called with two arguments.** The six-argument form that would let us
+pass `MOD_TRIGGER_HURT` silently dealt **no damage at all** — players sat outside a
+shrinking ring for 19 seconds at 5/sec and never died, while the loop kept running. The
+two-argument form works. Cost: with no explicit means-of-death the engine attributes ring
+damage to `MOD_HEAD_SHOT`, which is cosmetic but reads oddly. Damage that lands beats
+damage that is labelled correctly.
+
+Ring deaths produce **no `k;` log line**, because there is no attacker. Behaviour is
+correct; only the logging is quiet.
+
+## Task 10 — wipes and last squad standing
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Wipe detection | **PASS** | `win: squad 1 wiped, eliminating 1 member(s)` |
+| Wiped players stay out | **PASS** | eliminated members never reappear in later spawns |
+| Last squad standing ends the match | **PASS** | `win: squad 3 is last standing, ending match`, followed by `ShutdownGame:` and a fresh `InitGame` 12s later |
+| Cascades correctly across a whole match | **PASS** | with `squadsize 1`, squads 1, 2 and 0 were wiped in turn and squad 3 won |
+| Works again on the next match | **PASS** | wipe detection fired immediately in the new match after the cycle |
+| No instant elimination at match start | **PASS** | no wipes logged during the grace period in any run, with the "all members have spawned" rule in place |
+
+## Tuning, measured rather than guessed
+
+The spec's zone defaults were written without a map. Measured on `mp_prisonbreak`: the
+spawn centroid is `(-196, -399, 986)` and players were found up to ~2234 units from it, so
+a 4000-unit start radius does nothing for the first two phases. Defaults changed to:
+
+| Dvar | Spec | Now | Why |
+| --- | --- | --- | --- |
+| `zone_radius_start` | 4000 | **2600** | 4000 is larger than the playable area |
+| `zone_radius_end` | 400 | **250** | tighter final circle, forces contact |
+| `zone_hold` | 45 | **35** | 5 × (35 + 20) is a ~4.5 min closing sequence |
+| `zone_shrink` | 30 | **20** | as above |
+
+`squadsize 2` (duos) produces sensible pacing; the ring does the work that bot AI will not.
+
+## Outstanding
+
+| Item | Status |
+| --- | --- |
+| Countdown visibly clearing mid-wait | **NOT RUN** — needs a human to watch the on-screen timer |
+| Stock behaviour with the mod off | **NOT RUN** — inert by construction (`init()` returns), not separately measured |
+| Ring damage attributed as `MOD_HEAD_SHOT` | **KNOWN, COSMETIC** — the only `dodamage` form that works takes no means-of-death |
+| Enemy proximity ignored on spawn | **KNOWN, BY SPEC** — overriding `getspawnpoint` drops stock `dm`'s enemy-avoidance scoring |
+| Squadmates render as enemies | **KNOWN, BY DESIGN** — ADR-3's accepted cost of the FFA model |
+| Bots duel their own squadmate | **KNOWN** — they have no squad awareness, so they are poor opponents; use `squadsize 1` to force hostility when testing combat |

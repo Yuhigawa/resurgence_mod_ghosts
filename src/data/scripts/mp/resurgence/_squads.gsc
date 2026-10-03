@@ -146,10 +146,24 @@ squad_living_members( squadid )
 // A player sitting out the redeploy delay does NOT count as alive, so if the
 // last living member dies while a squadmate waits to redeploy, the squad is
 // wiped and that pending redeploy is cancelled.
+// A squad is wiped when every member has spawned at least once and none is
+// alive. The "has spawned" requirement matters: at match start nobody has
+// spawned yet, so a naive liveness check reports every squad as wiped and
+// eliminates the whole server before play begins. A member who has not
+// spawned yet is pending, not dead -- which also covers someone joining
+// mid-match.
 squad_is_wiped( squadid )
 {
-	if ( squad_members( squadid ).size == 0 )
+	var_0 = squad_members( squadid );
+
+	if ( var_0.size == 0 )
 		return 0;
+
+	foreach ( var_1 in var_0 )
+	{
+		if ( !isdefined( var_1.hasspawned ) || !var_1.hasspawned )
+			return 0;
+	}
 
 	return squad_living_members( squadid ).size == 0;
 }
