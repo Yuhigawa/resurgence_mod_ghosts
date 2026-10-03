@@ -40,12 +40,14 @@ init()
 	rsg_log( "init: enabled, squadsize " + level.rsg.squadsize + ", redeploy " + level.rsg.redeploydelay + "s" );
 
 	scripts\mp\resurgence\_squads::init();
+	scripts\mp\resurgence\_movement::init();
 	scripts\mp\resurgence\_zone::init();
 	scripts\mp\resurgence\_win::init();
 	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
 	{
 		scripts\mp\resurgence\_redeploy::init();
 		scripts\mp\resurgence\_friendlyfire::init();
+		scripts\mp\resurgence\_ttk::init();
 		scripts\mp\resurgence\_loadout::init();
 		scripts\mp\resurgence\_loadout::init_player_watcher();
 	}
@@ -62,8 +64,13 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_squadsize", 2 );
 	setdvarifuninitialized( "scr_resurgence_redeploydelay", 15 );
 	setdvarifuninitialized( "scr_resurgence_spawn_min_dist", 200 );
+	setdvarifuninitialized( "scr_resurgence_speed_scale", 1.02 );
+	setdvarifuninitialized( "scr_resurgence_sprint_scale", 1.05 );
+	setdvarifuninitialized( "scr_resurgence_damage_scale", 0.7 );
+	setdvarifuninitialized( "scr_resurgence_knife_hits", 3 );
 	setdvarifuninitialized( "scr_resurgence_primary", "iw6_imbel_mp" );
 	setdvarifuninitialized( "scr_resurgence_secondary", "iw6_p226_mp" );
+	setdvarifuninitialized( "scr_resurgence_perks", "specialty_lightweight specialty_fastsprintrecovery specialty_unlimitedsprint specialty_marathon specialty_extremeconditioning" );
 	setdvarifuninitialized( "scr_resurgence_zone_enabled", 1 );
 	setdvarifuninitialized( "scr_resurgence_zone_phases", 5 );
 	setdvarifuninitialized( "scr_resurgence_zone_radius_start", 2600 );

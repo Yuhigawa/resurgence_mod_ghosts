@@ -103,6 +103,38 @@ apply_kit()
 
 	self switchtoweapon( level.rsg.primary );
 	scripts\mp\_resurgence::rsg_log( "loadout: " + self.name + " kit " + level.rsg.primary + " / " + level.rsg.secondary );
+
+	give_perks();
+}
+
+// Perks are dvar-driven, space separated, because the class bypass puts
+// everyone on class0 and you therefore get whatever that default class has --
+// in practice vanilla stamina-limited sprint, which is wrong for a mode that
+// asks you to cross a map ahead of a closing ring.
+//
+// The full perk table lives in a fastfile and cannot be read, so valid names
+// are not enumerable: each one is applied in its OWN thread, so a name the
+// engine rejects kills only its own thread and the rest still apply. The log
+// says which survived.
+give_perks()
+{
+	var_0 = getdvar( "scr_resurgence_perks" );
+
+	if ( var_0 == "" )
+		return;
+
+	var_1 = strtok( var_0, " " );
+
+	foreach ( var_2 in var_1 )
+		self thread give_perk_safe( var_2 );
+}
+
+give_perk_safe( perk )
+{
+	self endon( "disconnect" );
+
+	maps\mp\_utility::giveperk( perk, 0 );
+	scripts\mp\_resurgence::rsg_log( "perk: " + self.name + " <- " + perk + " OK" );
 }
 
 // Both predicates in _menus.gsc:434 must be false for a human to take the
