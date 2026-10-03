@@ -44,10 +44,10 @@ a squad-aware scoreboard, buy stations, loot, contracts, gulag, a registered
 | Hook | Location | Used for |
 | --- | --- | --- |
 | `mayspawn()` | `_playerlogic.gsc:81` | gate redeploy; returning 0 sends the player to spectator via `spawnclient()` |
-| `level.onrespawndelay` | called at `_playerlogic.gsc:48` | per-player redeploy delay, overriding `scr_<gametype>_playerrespawndelay` |
+| `level.onrespawndelay` | called at `_playerlogic.gsc:50` | per-player redeploy delay, overriding `scr_<gametype>_playerrespawndelay` |
 | `level.getspawnpoint` | called at `_playerlogic.gsc:548`, `:578`, `:372` | spawn selection |
 | `level.onspawnplayer` | called at `_playerlogic.gsc:678` | per-spawn setup |
-| `maps\mp\_utility::attackerishittingteam` | consumed at `_damage.gsc:1610` as `var_13` | single gate feeding every `level.friendlyfire == 0` branch |
+| `maps\mp\_utility::attackerishittingteam` | consumed at `_damage.gsc:1602` as `var_13` | single gate feeding every `level.friendlyfire == 0` branch |
 | `endgame( winner, reason )` | `_gamelogic.gsc:2204` | in non-teambased modes the winner is a **player entity**, not a team string |
 | `level.ondeadevent` / `level.ononeleftevent` | `_gamelogic.gsc:90`, `:120` | vanilla elimination events (not used — see ADR-2) |
 | `givelastonteamwarning()` | `_gamelogic.gsc:2481` | reference for callout style |
@@ -71,7 +71,7 @@ src/data/scripts/mp/resurgence/_loadout.gsc  fixed kit, killstreaks off
 src/data/scripts/mp/resurgence/_win.gsc      squad-wipe and last-squad-standing
 ```
 
-Paths named elsewhere in this document (`_damage.gsc:1610` and similar) refer to the
+Paths named elsewhere in this document (`_damage.gsc:1602` and similar) refer to the
 installed game tree under `/mnt/d/games/cod_cbservers/ghosts_game_files/data/`.
 
 ### Module contracts
@@ -107,7 +107,7 @@ eliminated; otherwise the player redeploys normally.
 Because a squad can be wiped *while* a member waits out the redeploy delay, this module
 also listens for its own squad's wipe and cancels a pending redeploy: it sets
 `rsg_eliminated`, notifies `end_respawn` to break the waiting thread
-(`_playerlogic.gsc:168` endons it), clears the spawn lower-message, and leaves the
+(`_playerlogic.gsc:169` endons it), clears the spawn lower-message, and leaves the
 player as a spectator.
 
 **`_spawning.gsc`** — `level.getspawnpoint = ::rsg_getspawnpoint`. Takes the map's
@@ -126,26 +126,67 @@ the radius, and shows a lower-message warning while they are outside. Phase chan
 announce via `iprintln`.
 
 **`_loadout.gsc`** — one preset weapon/perk kit applied on spawn, killstreaks
-disabled. Modeled on how `aliens.gsc` drives loadouts through
-`level.custom_giveloadout` / `level.custom_onspawnplayer_func`
-(`aliens.gsc:42-43`, `:648`).
+disabled. Uses `level.custom_giveloadout = ::rsg_giveloadout`, which `spawnplayer`
+consumes **unconditionally** at `_playerlogic.gsc:696-697`, replacing the default
+`_class::giveloadout` call on the `else` branch. That path is gametype-agnostic and so
+runs under `dm`; `aliens.gsc:58` is precedent for the same hook, not a dependency on it.
+
+Note what *not* to use here: `level.custom_onspawnplayer_func` is read only inside
+`aliens.gsc`'s own `onspawnplayer` (`aliens.gsc:648`) and is never consulted under
+`dm`. Non-loadout per-spawn setup goes through `level.onspawnplayer`
+(`_playerlogic.gsc:678`) instead. The callback receives vanilla's faux-spawn flag as
+its one argument; pass it through.
 
 **`_win.gsc`** — a 0.5s watcher thread. When a squad transitions to wiped it announces
 the wipe and marks members eliminated. When exactly one squad remains it announces the
 winning squad with `iprintlnbold` and calls
 `maps\mp\gametypes\_gamelogic::endgame( <a living member>, game["end_reason"]["enemies_eliminated"] )`.
 
+That `end_reason` key is populated outside `data/`, so it cannot be confirmed locally.
+It is very likely present under `dm`: `_gamelogic.gsc:134` passes it from the
+**non-teambased** branch of `default_ononeleftevent`, which is dm's own last-player-alive
+path, so vanilla FFA would already be broken if it were unset. `_win.gsc` guards it
+anyway and falls back to `game["end_reason"]["ended_game"]`, since the cost is one
+`isdefined`.
+
+### Callback installation order
+
+`_spawning`, `_loadout` and `_redeploy`'s delay hook work by *assigning*
+`level.getspawnpoint`, `level.custom_giveloadout` and `level.onrespawndelay`.
+`dm.gsc` lives in a fastfile and assigns its own values to those same pointers from
+`[[ level.onstartgametype ]]()`, called at `_gamelogic.gsc:1660`. Whether
+`scripts/mp/` loads before or after that is not documented and not observable from
+`data/`, and if the gametype wins, three of six modules die **silently** — no script
+error, no log line.
+
+Rather than discover the ordering empirically and depend on it, installation is made
+order-independent by doing it twice:
+
+1. `_resurgence.gsc`'s `init()` assigns the callbacks directly.
+2. A marked hook in `callback_startgametype`, immediately after
+   `[[ level.onstartgametype ]]()` at `_gamelogic.gsc:1660`, calls
+   `level.rsg_install_callbacks` if it is defined.
+
+If our script loads *after* the gametype, step 1 already won. If it loads *before*,
+step 2 re-asserts over the gametype's assignments. Both orders land correctly, and
+step 2 runs before `startgame()` is threaded at `:1667`, so it is always in place
+before play begins. The hook is three lines in a file we already override, wrapped in
+`// RESURGENCE BEGIN` / `// RESURGENCE END`.
+
+`replacefunc` (used for `mayspawn` and the friendly-fire gate) is unaffected by load
+order; only plain pointer assignments have this problem.
+
 ### Friendly fire
 
 `replacefunc( maps\mp\_utility::attackerishittingteam, ::rsg_hitting_squad )`, which
 returns true when attacker and victim are in the same squad (and otherwise reproduces
 vanilla's team check). Because `_damage.gsc` funnels every friendly-fire decision
-through that one value (`var_13`, `_damage.gsc:1610`), one hook covers all damage
+through that one value (`var_13`, `_damage.gsc:1602`), one hook covers all damage
 paths — including those in stock files we do not have locally. Requires
 `scr_friendlyfire 0`.
 
 **Fallback** if that stock function cannot be hooked: a marked two-line edit at
-`_damage.gsc:1610` ORing in the squad check. Any such edit to a dumped overlay file is
+`_damage.gsc:1602` ORing in the squad check. Any such edit to a dumped overlay file is
 wrapped in `// RESURGENCE BEGIN` / `// RESURGENCE END` comments so it survives a future
 re-dump by being easy to find and re-apply.
 
@@ -182,6 +223,16 @@ Required server config: `g_gametype dm`, `scr_friendlyfire 0`,
 
 GSC has no test harness here, so verification is explicit and manual:
 
+0. **Spike: same-file `replacefunc`** — before any module is built, a throwaway script
+   replaces `_playerlogic::mayspawn` with a stub that logs and returns 1, and we confirm
+   the log appears on spawn. `mayspawn` is called from `spawnclient()` at
+   `_playerlogic.gsc:122`, i.e. **within the same script file**, and whether this
+   loader patches same-file direct calls or only cross-script resolution decides
+   whether `_redeploy` can work at all. If the stub never fires, `_redeploy` switches
+   to a marked edit of `mayspawn` in the local overlay instead, and the spike has cost
+   five minutes rather than a module. The same spike confirms the
+   `attackerishittingteam` hook, which is cross-script and expected to work.
+
 1. **Parse pass** — every new file loads without a script error on server start.
 2. **Squad assignment** — with `scr_resurgence_debug 1`, join with several clients and
    confirm the logged squad table matches join order and `squadsize`.
@@ -205,7 +256,7 @@ dead-end before any gameplay exists. Riding `dm` works on stock clients today; t
 server browser will show the mode as Free-For-All. Renaming is a separate later phase.
 
 **ADR-2 — our own watcher thread rather than vanilla's alive-count events.**
-`updategameevents` (`_gamelogic.gsc:345`) returns early unless `numlives` is nonzero or
+`updategameevents` (`_gamelogic.gsc:278`, early return at `:346`) returns early unless `numlives` is nonzero or
 spawning is disabled, and enabling `numlives` pulls in `pers["lives"]` bookkeeping,
 latecomer rules (`mayspawn`, `_playerlogic.gsc:81-105`) and lobby UI we would then
 have to fight. A dedicated 0.5s thread is more code and far fewer side effects, and
@@ -224,6 +275,14 @@ No stock GSC source is available locally and the usual mirror was down. Every ho
 this design either targets a file already present in `data/` or goes through
 `replacefunc`, which needs the stock function's signature and semantics but not its
 source.
+
+**ADR-5 — install callbacks twice rather than rely on load order.**
+See Callback installation order. The alternative was to establish empirically whether
+`scripts/mp/` loads before or after `[[ level.onstartgametype ]]()` and depend on the
+answer. Rejected: the failure mode is silent (three modules inert, no script error),
+the ordering is undocumented and could change with a server update, and a three-line
+hook in a file we already override makes the question moot. Cost is one more marked
+edit to a dumped overlay file.
 
 ## Deferred
 
@@ -251,7 +310,10 @@ path from `GHOSTS_DIR`, defaulting to
 `/mnt/d/games/cod_cbservers/ghosts_game_files`, copies only files under `src/data/`,
 never deletes anything in the install, and prints what it wrote.
 
-Any edit this project makes to an **existing** overlay file in the install (the
-`_damage.gsc` fallback in Friendly fire is the only candidate) is also committed here
-as a copy of that file under `src/data/`, so the change is versioned rather than
-living only in the game folder.
+Any edit this project makes to an **existing** overlay file in the install is also
+committed here as a copy of that file under `src/data/`, so the change is versioned
+rather than living only in the game folder. Two such edits are foreseen: the
+`callback_startgametype` hook in `_gamelogic.gsc` (ADR-5, certain) and the
+`_damage.gsc` friendly-fire fallback (only if `replacefunc` on
+`attackerishittingteam` fails). Both are wrapped in `// RESURGENCE BEGIN` /
+`// RESURGENCE END`.
