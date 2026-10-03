@@ -441,6 +441,10 @@ yields one frame and reinstalls achieves the same thing with no edit, and a thir
 `prematch_over` covers deferred reassignment. Verified: three passes logged per match.
 
 **ADR-6 — add files to `data/`, never modify the ones CBServers ships.**
+Confirmed with the user: CBServers exposes **no runtime toggle and no "unsafe" flag** to
+disable the restoration selectively. This is therefore a permanent constraint on the
+architecture, not a default to work around.
+
 Discovered by testing, not documented anywhere: within ~3 seconds of launch the platform
 **restores** any file it ships under `data/`. An eight-line addition to
 `_gamelogic.gsc` was deleted and the file returned byte-identical to its original 2770

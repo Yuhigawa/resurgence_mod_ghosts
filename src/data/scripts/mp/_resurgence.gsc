@@ -38,6 +38,8 @@ init()
 
 	rsg_log( "init: enabled, squadsize " + level.rsg.squadsize + ", redeploy " + level.rsg.redeploydelay + "s" );
 
+	scripts\mp\resurgence\_squads::init();
+
 	install_callbacks();
 	level thread reassert_callbacks();
 }
