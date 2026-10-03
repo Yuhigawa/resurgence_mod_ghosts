@@ -104,6 +104,27 @@ checks. Sets `level.onrespawndelay = ::rsg_respawndelay`, returning
 `squad_living_members( squad_of( self ) )` is empty, the whole squad is flagged
 eliminated; otherwise the player redeploys normally.
 
+**Deaths during the grace period do not count.** `_redeploy` ignores any death while
+`level.ingraceperiod` is set: no life is spent, no squad is flagged wiped. This is
+correct on its own terms — no squad should be eliminated before the match has started —
+and it also neutralises `setteam()` at `_menus.gsc:362`, a third
+`ingraceperiod && !self.hasdonecombat` branch which sets `self.hasspawned = 0` (`:370`),
+calls `self suicide()` (`:382`), and then re-enters `spawnclient()` (`:397`). FFA still
+exposes team selection on some menu paths, so without this rule a grace-period team
+switch would cost the squad a life, and would wipe the squad outright if the switcher was
+its last living member. That site needs no guard of its own — it calls no loadout
+function — only this rule.
+
+A related latent coupling, documented so it is not rediscovered: `setteam()` falsifies
+`self.hasspawned`, which is what vanilla's latecomer check at `_playerlogic.gsc:95` keys
+on, and `rsg_mayspawn` copies that check. It cannot bite us **in this configuration**,
+because the whole block holding both the lives and latecomer checks is gated at
+`_playerlogic.gsc:82` on `getgametypenumlives() || isdefined( level.disablespawning )` —
+and with `numlives` at 0 per ADR-2 and `disablespawning` never set, vanilla `mayspawn`
+returns 1 unconditionally. The copied checks are therefore dead code under our config.
+They are kept for fidelity: they are exactly what would start mattering if anyone ever
+enables `numlives`, and `rsg_mayspawn` should behave correctly if they do.
+
 Because a squad can be wiped *while* a member waits out the redeploy delay, this module
 also listens for its own squad's wipe and cancels a pending redeploy: it sets
 `rsg_eliminated`, notifies `end_respawn` to break the waiting thread
@@ -265,6 +286,9 @@ GSC has no test harness here, so verification is explicit and manual:
 1. **Parse pass** — every new file loads without a script error on server start.
 2. **Squad assignment** — with `scr_resurgence_debug 1`, join with several clients and
    confirm the logged squad table matches join order and `squadsize`.
+3a. **Grace-period deaths** — during the grace period, switch team from the menu
+   (`setteam`, `_menus.gsc:362`) and confirm no life is spent and no squad is reported
+   wiped, including when the switcher is the squad's only living member.
 3. **Redeploy** — die with a squadmate alive: redeploy after the delay, near that
    squadmate. Die with no squadmate alive: permanent spectate, squad announced wiped.
 4. **Friendly fire** — shoot a squadmate: no damage. Shoot a non-squadmate: damage.
