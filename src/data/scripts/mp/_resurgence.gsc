@@ -44,6 +44,7 @@ init()
 	{
 		scripts\mp\resurgence\_redeploy::init();
 		scripts\mp\resurgence\_friendlyfire::init();
+		scripts\mp\resurgence\_loadout::init();
 	}
 
 	install_callbacks();
@@ -105,6 +106,7 @@ install_callbacks()
 		scripts\mp\resurgence\_redeploy::install_callbacks();
 
 	scripts\mp\resurgence\_spawning::install_callbacks();
+	scripts\mp\resurgence\_loadout::install_callbacks();
 	rsg_log( "install_callbacks (pass " + level.rsg.installs + "): onrespawndelay + getspawnpoint set" );
 }
 

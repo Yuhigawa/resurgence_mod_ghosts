@@ -41,7 +41,7 @@ See `docs/SPIKE-replacefunc.md`. Same-file **and** cross-script `replacefunc` bo
 | Duo packing, `squadsize 2` | **PASS** | `squad 0 [2/2]`, `squad 1 [2/2]` |
 | `squadsize` is read, not hardcoded | **PASS** | `squadsize 4` → `squad 0 [4/4]`, one squad |
 | Capacity respected on same-frame connects | **PASS after fix** | see below |
-| Disconnect frees a seat | **NOT RUN** | `clientkick` / `kick` do nothing over rcon; no second human client available |
+| Disconnect frees a seat | **PASS** | real disconnect: `13:53 Q;bot1;0;StarBerry` left squad 0 (`[2/2] StarBerry Dsso`), and the next joiner took the freed seat (`[2/2] Dsso josep`). The roster pruning works on a genuine disconnect, not just by construction. |
 
 **Bug found and fixed here.** The first implementation counted squad members by scanning
 `level.players`, but a player is **not yet in `level.players`** when its `connected` notify
@@ -126,6 +126,7 @@ real loss of vanilla behaviour and should be an explicit choice rather than an o
 | Squadmate damage blocked | **PASS** | 202 `friendlyfire: blocked` lines, every pair a correct squad member |
 | Non-squadmate damage still lands | **PASS** | bracketing run, see below |
 | Stock behaviour returns with the mod off | **NOT RUN** | `init()` is unreachable when disabled, so the stock function is untouched by construction; not separately measured |
+| **Verified on a human client** | **PASS** | player `josep` in squad 0 with bot `Dsso`: 25 `friendlyfire: blocked josep -> Dsso` lines and **zero** damage events landing on Dsso, while the same player killed `My Flaws` (squad 1) twice with 4 damage events. Both halves, one session, one player — stronger than the bot bracketing below. |
 
 **How non-squadmate damage was verified without a human client.** Bots lock into a futile
 duel with their own partner — they spawn together (Task 6) and have no squad awareness, so
@@ -144,3 +145,38 @@ Damage lands when it should and is blocked when it should. Both halves proven.
 their own squadmate and get blocked, squads do not reliably eliminate each other, so Task 10
 (wipes and last-squad-standing) cannot be driven by bot combat alone. It will need either
 `squadsize 1` to force hostility, or a human client.
+
+## Task 8 (partial) — the class-selection blocker
+
+Found by putting a human on the server, and it is a **mode-breaking bug that no amount of
+bot testing could have surfaced**.
+
+A human client never spawns. `waitforclassselect()` (`_menus.gsc:426`) parks on
+`self waittill( "luinotifyserver", var_0, var_1 )` until the client's LUA sends
+`class_select`; that notify never arrived, the player sat in spectator, and vanilla's
+`kickifdontspawn` (`_playerlogic.gsc:1506`) dropped them after `scr_kick_time` (90s
+default) with `EXE_PLAYERKICKED_INACTIVE`. Observed exactly that: joined, never spawned,
+kicked for inactivity.
+
+**Bots are immune**, which is why seven tasks' worth of bot verification never saw it:
+`_menus.gsc:450` routes them through the `isBot` branch, and `:434`'s condition excludes
+them via `!isai( self )`.
+
+Fix, which is what the mode wanted anyway: Resurgence issues one fixed kit, so the class
+step should not exist. `_menus.gsc:434` takes the `bypassclasschoice()` branch when
+`allowclasschoice()` is false, and `:518` then calls `level.bypassclasschoicefunc`
+(`aliens.gsc:50` is the precedent). Both predicates in that condition must be false —
+precedence is `a || (b && c)` — so `_loadout::init()` replaces **both**
+`_utility::allowclasschoice` and `_utility::showfakeloadout` with `return 0`, and
+`install_callbacks()` sets `level.bypassclasschoicefunc` to return `class0`.
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Human spawns with no class menu | **PASS** | `RSG: getspawnpoint: josep no living squadmate, random of 15` immediately after `J;...;josep`, no menu interaction |
+| Squadmate redeploys to a living human | **PASS** | `RSG: getspawnpoint: Dsso near josep, 708 units, from 15 candidates` |
+| Fixed weapon kit + killstreaks off | **NOT BUILT** | remainder of Task 8 |
+
+**A process note worth keeping.** Before the bypass, the player reached the menu manually
+(Esc → Choose Class), selected a class, spawned — and then the game died. That was not a
+mod fault: the server was restarted underneath them to deploy this very fix. No crash dumps
+were written. Do not restart the server while someone is connected.
