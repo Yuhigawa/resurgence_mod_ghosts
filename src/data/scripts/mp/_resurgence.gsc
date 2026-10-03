@@ -41,6 +41,7 @@ init()
 
 	scripts\mp\resurgence\_squads::init();
 	scripts\mp\resurgence\_movement::init();
+	scripts\mp\resurgence\_admin::init();
 	scripts\mp\resurgence\_zone::init();
 	scripts\mp\resurgence\_win::init();
 	if ( !getdvarint( "scr_resurgence_debug_nohooks", 0 ) )
@@ -80,6 +81,9 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
 	setdvarifuninitialized( "scr_resurgence_zone_markers", 0 );
 	setdvarifuninitialized( "scr_resurgence_zone_marker_icon", "compassiconfriendly" );
+	setdvarifuninitialized( "scr_resurgence_admin_killbots", 0 );
+	setdvarifuninitialized( "scr_resurgence_admin_killall", 0 );
+	setdvarifuninitialized( "scr_resurgence_admin_restart", 0 );
 	setdvarifuninitialized( "scr_resurgence_debug", 0 );
 }
 
