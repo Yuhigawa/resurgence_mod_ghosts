@@ -137,6 +137,28 @@ Note what *not* to use here: `level.custom_onspawnplayer_func` is read only insi
 (`_playerlogic.gsc:678`) instead. The callback receives vanilla's faux-spawn flag as
 its one argument; pass it through.
 
+**The hook runs after `setclass`.** `_class::setclass( self.class )` is called at
+`_playerlogic.gsc:694`, two lines before our hook, so whatever the player's chosen class
+grants is applied first and we overwrite on top. `rsg_giveloadout` must therefore be a
+*clear slate*, not a top-up, and in particular **killstreaks must be disabled inside the
+hook body** — never assumed absent because `setclass` ran. `aliens.gsc:1107-1211` is the
+working precedent for exactly this shape: `takeallweapons()` (`:1109`), action slots
+cleared (`:1113-1123`), `_clearperks()` (`:1125`), then `self.killstreaktype = "none"`
+(`:1137`) before anything is granted. Follow that order.
+
+**Two bypass sites to close.** `_class::giveloadout` is also called *directly*,
+ignoring `level.custom_giveloadout`, at `_menus.gsc:182` and `_menus.gsc:598` — the
+class-change paths, both gated on `level.ingraceperiod && !self.hasdonecombat`. The
+window is narrow but it is exactly when players sit in the class menu, and a Resurgence
+player who spawns at match start and never dies would keep that vanilla kit, killstreaks
+included, for the whole match. `_menus.gsc` is a local overlay, so both sites get a
+marked edit mirroring the guard at `_playerlogic.gsc:696-699`:
+call `level.custom_giveloadout` when defined, else the stock function. (The alternative,
+`replacefunc` on `_class::giveloadout` itself, would cover all three call sites with one
+cross-script hook and no edits; rejected because it discards a stock function whose
+internals we cannot read, where the guard keeps vanilla behaviour intact whenever the
+mod is off.)
+
 **`_win.gsc`** — a 0.5s watcher thread. When a squad transitions to wiped it announces
 the wipe and marks members eliminated. When exactly one squad remains it announces the
 winning squad with `iprintlnbold` and calls
@@ -151,8 +173,8 @@ anyway and falls back to `game["end_reason"]["ended_game"]`, since the cost is o
 
 ### Callback installation order
 
-`_spawning`, `_loadout` and `_redeploy`'s delay hook work by *assigning*
-`level.getspawnpoint`, `level.custom_giveloadout` and `level.onrespawndelay`.
+Three callbacks are at risk: `level.getspawnpoint`, `level.onspawnplayer` and
+`level.onrespawndelay`, all assigned by `_spawning` and `_redeploy`.
 `dm.gsc` lives in a fastfile and assigns its own values to those same pointers from
 `[[ level.onstartgametype ]]()`, called at `_gamelogic.gsc:1660`. Whether
 `scripts/mp/` loads before or after that is not documented and not observable from
@@ -175,6 +197,13 @@ before play begins. The hook is three lines in a file we already override, wrapp
 
 `replacefunc` (used for `mayspawn` and the friendly-fire gate) is unaffected by load
 order; only plain pointer assignments have this problem.
+
+`level.custom_giveloadout` is **not** part of the risk this defends against: it is a
+loader extension point, undefined by default, and `dm.gsc` has no reason to assign it —
+the only thing that reads it is the `isdefined` guard at `_playerlogic.gsc:696`. The
+re-assert covers it anyway because doing so is free, but its inclusion should not be read
+as evidence that the overwrite risk extends to loader extension points. The three
+callbacks above are the actual exposure.
 
 ### Friendly fire
 
@@ -239,9 +268,12 @@ GSC has no test harness here, so verification is explicit and manual:
 3. **Redeploy** — die with a squadmate alive: redeploy after the delay, near that
    squadmate. Die with no squadmate alive: permanent spectate, squad announced wiped.
 4. **Friendly fire** — shoot a squadmate: no damage. Shoot a non-squadmate: damage.
-5. **Zone** — with `scr_resurgence_zone_enabled 1`, confirm phase announcements, that
+5. **Loadout** — spawn and confirm the preset kit with no killstreaks available, then
+   change class *during the grace period* and confirm the kit survives it (this is the
+   `_menus.gsc:182` / `:598` bypass; before the guard is added, expect it to fail).
+6. **Zone** — with `scr_resurgence_zone_enabled 1`, confirm phase announcements, that
    standing outside deals damage, and that spawns stay inside the ring.
-6. **Win** — reduce to one squad and confirm the match ends naming that squad.
+7. **Win** — reduce to one squad and confirm the match ends naming that squad.
 
 Each step is runnable in isolation because the zone and the mod itself are
 dvar-gated. No success claim is made for any step without the console output or
@@ -312,8 +344,11 @@ never deletes anything in the install, and prints what it wrote.
 
 Any edit this project makes to an **existing** overlay file in the install is also
 committed here as a copy of that file under `src/data/`, so the change is versioned
-rather than living only in the game folder. Two such edits are foreseen: the
-`callback_startgametype` hook in `_gamelogic.gsc` (ADR-5, certain) and the
-`_damage.gsc` friendly-fire fallback (only if `replacefunc` on
-`attackerishittingteam` fails). Both are wrapped in `// RESURGENCE BEGIN` /
-`// RESURGENCE END`.
+rather than living only in the game folder. Four such edits are foreseen:
+
+- `_gamelogic.gsc` — the `callback_startgametype` re-assert hook (ADR-5, certain)
+- `_menus.gsc` ×2 — the `custom_giveloadout` guard at `:182` and `:598` (certain)
+- `_damage.gsc` — the friendly-fire fallback, only if `replacefunc` on
+  `attackerishittingteam` fails
+
+All are wrapped in `// RESURGENCE BEGIN` / `// RESURGENCE END`.
