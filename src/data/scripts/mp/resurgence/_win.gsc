@@ -3,8 +3,7 @@
 // Polls rather than hooking a death callback: level.onplayerkilled is called
 // at _damage.gsc:852 and dm.gsc assigns it for scoring, so hooking it would
 // mean chaining through stock code for no gain. Polling answers the only
-// question we actually have -- "is anyone in this squad still alive?" --
-// without touching anything the gametype owns.
+// question we actually have -- is anyone in this squad still alive.
 
 init()
 {
@@ -26,12 +25,13 @@ watch()
 
 		// Grace-period deaths do not count. This also neutralises setteam()
 		// at _menus.gsc:362, which clears self.hasspawned and then suicides
-		// the player: without this rule a menu team-switch would cost the
-		// squad a life before the match had started.
+		// the player: without this a menu team-switch would cost a life
+		// before the match had started.
 		if ( level.ingraceperiod )
 			continue;
 
 		check_wipes();
+		check_everyone_dead();
 		check_last_squad();
 	}
 }
@@ -56,6 +56,39 @@ check_wipes()
 	}
 }
 
+// Everyone dead at once -- the ring catching the last two together, or an
+// admin killall. living_squad_ids() is then empty, so check_last_squad's
+// "exactly one squad alive" test never fires and the match hangs forever.
+// Vanilla treats this as a tie (_gamelogic.gsc:116 ends with an undefined
+// winner in non-teambased modes).
+check_everyone_dead()
+{
+	var_0 = scripts\mp\resurgence\_squads::squad_ids();
+
+	if ( var_0.size == 0 )
+		return;
+
+	if ( scripts\mp\resurgence\_squads::living_squad_ids().size > 0 )
+		return;
+
+	// Only when every squad is genuinely wiped, not merely mid-respawn.
+	foreach ( var_1 in var_0 )
+	{
+		if ( !scripts\mp\resurgence\_squads::squad_is_wiped( var_1 ) )
+			return;
+	}
+
+	iprintlnbold( "EVERYONE IS DEAD - DRAW" );
+	scripts\mp\_resurgence::rsg_log( "win: all " + var_0.size + " squad(s) wiped, ending match as a draw" );
+
+	var_2 = game["end_reason"]["tie"];
+
+	if ( !isdefined( var_2 ) )
+		var_2 = game["end_reason"]["ended_game"];
+
+	level thread maps\mp\gametypes\_gamelogic::endgame( undefined, var_2 );
+}
+
 check_last_squad()
 {
 	var_0 = scripts\mp\resurgence\_squads::living_squad_ids();
@@ -63,8 +96,8 @@ check_last_squad()
 	if ( var_0.size != 1 )
 		return;
 
-	// A solo tester is one squad from the start; without this the match
-	// would end the instant the grace period expired.
+	// A solo tester is one squad from the start; without this the match would
+	// end the instant the grace period expired.
 	if ( scripts\mp\resurgence\_squads::squad_ids().size < 2 )
 		return;
 
@@ -83,24 +116,25 @@ check_last_squad()
 			return;
 	}
 
-	// "squad 0 wins" is meaningless to a player who does not know which squad
+	// "squad 0 wins" means nothing to a player who does not know which squad
 	// he is in -- a human won a match and could not tell. Name the winners,
 	// and tell them directly.
 	iprintlnbold( squad_names( var_0[0] ) + " WINS" );
 
-	foreach ( var_4 in scripts\mp\resurgence\_squads::squad_members( var_0[0] ) )
-		var_4 iprintlnbold( "YOU WIN" );
+	foreach ( var_3 in scripts\mp\resurgence\_squads::squad_members( var_0[0] ) )
+		var_3 iprintlnbold( "YOU WIN" );
+
 	scripts\mp\_resurgence::rsg_log( "win: squad " + var_0[0] + " is last standing, ending match" );
 	scripts\mp\resurgence\_squads::dump_squads();
 
 	// endgame()'s winner is a PLAYER entity in non-teambased modes
 	// (_gamelogic.gsc:134 passes one), so pass a living member.
-	var_3 = game["end_reason"]["enemies_eliminated"];
+	var_4 = game["end_reason"]["enemies_eliminated"];
 
-	if ( !isdefined( var_3 ) )
-		var_3 = game["end_reason"]["ended_game"];
+	if ( !isdefined( var_4 ) )
+		var_4 = game["end_reason"]["ended_game"];
 
-	level thread maps\mp\gametypes\_gamelogic::endgame( var_1[0], var_3 );
+	level thread maps\mp\gametypes\_gamelogic::endgame( var_1[0], var_4 );
 }
 
 all_eliminated( members )

@@ -67,6 +67,8 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_spawn_min_dist", 200 );
 	setdvarifuninitialized( "scr_resurgence_speed_scale", 1.02 );
 	setdvarifuninitialized( "scr_resurgence_sprint_scale", 1.05 );
+	setdvarifuninitialized( "scr_resurgence_slide_scale", 1.35 );
+	setdvarifuninitialized( "scr_resurgence_slide_time", 0.9 );
 	setdvarifuninitialized( "scr_resurgence_damage_scale", 0.7 );
 	setdvarifuninitialized( "scr_resurgence_knife_hits", 3 );
 	setdvarifuninitialized( "scr_resurgence_primary", "iw6_imbel_mp" );
