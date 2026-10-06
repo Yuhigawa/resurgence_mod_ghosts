@@ -221,12 +221,19 @@ fall_immune( player )
 	return player.rsg_infil;
 }
 
-// A point in open sky with REAL GROUND beneath it.
+// A drop point must satisfy BOTH conditions, and each has bitten us:
 //
-// Spawn points are guaranteed to sit on walkable ground, so the drop is
-// placed above one of them. Scattering freely around the map centre instead
-// put players over the void on smaller maps -- nothing to fall to, so they
-// hung at the drop altitude until the timeout.
+//   ground beneath it   -- scattering freely around the map centre put points
+//                          over the void on small maps, and players hung there
+//   open sky above it   -- a fixed height above the tallest spawn pushed the
+//                          point past the world ceiling on lonestar, and
+//                          players hung there too
+//
+// So the height is TRACED rather than assumed: from a real spawn point
+// upwards, stopping at whatever ceiling exists. Spawn points guarantee ground;
+// the trace guarantees we stay inside the world. Several are sampled and the
+// one with the most headroom wins, which also rejects indoor spawns (measured
+// ceilings of 49 and 72 units on hashima).
 drop_point()
 {
 	var_0 = scripts\mp\resurgence\_spawning::spawn_candidates();
@@ -234,47 +241,40 @@ drop_point()
 	if ( var_0.size == 0 )
 		return undefined;
 
-	var_1 = getdvarfloat( "scr_resurgence_infil_spread" );
-	var_2 = ceiling_height() + getdvarfloat( "scr_resurgence_infil_height" );
+	var_1 = getdvarfloat( "scr_resurgence_infil_height" );
+	var_2 = getdvarfloat( "scr_resurgence_infil_spread" );
+	var_3 = undefined;
+	var_4 = 0;
 
-	for ( var_3 = 0; var_3 < 6; var_3++ )
+	for ( var_5 = 0; var_5 < 8; var_5++ )
 	{
-		var_4 = var_0[randomint( var_0.size )];
-		var_5 = ( var_4.origin[0] + randomfloatrange( 0 - var_1, var_1 ), var_4.origin[1] + randomfloatrange( 0 - var_1, var_1 ), var_2 );
+		var_6 = var_0[randomint( var_0.size )];
+		var_7 = ( var_6.origin[0] + randomfloatrange( 0 - var_2, var_2 ), var_6.origin[1] + randomfloatrange( 0 - var_2, var_2 ), var_6.origin[2] + 16 );
 
-		// Verified to have ground under it before it is used.
-		if ( var_5[2] - ground_below( var_5 ) < 15000 )
-			return var_5;
-	}
+		// How high can a player-sized volume actually rise from here?
+		var_8 = playerphysicstrace( var_7, ( var_7[0], var_7[1], var_7[2] + var_1 ) );
+		var_9 = var_8[2] - var_7[2];
 
-	// Nothing jittered worked: sit directly over a spawn point, which always
-	// has ground beneath it.
-	var_6 = var_0[randomint( var_0.size )];
-	return ( var_6.origin[0], var_6.origin[1], var_2 );
-}
-
-// Highest spawn point on the map, as a reference for clearing buildings.
-ceiling_height()
-{
-	if ( isdefined( level.rsg.dropceiling ) )
-		return level.rsg.dropceiling;
-
-	var_0 = scripts\mp\resurgence\_spawning::spawn_candidates();
-	var_1 = 0;
-	var_2 = 0;
-
-	foreach ( var_3 in var_0 )
-	{
-		if ( !var_2 || var_3.origin[2] > var_1 )
+		if ( var_9 > var_4 )
 		{
-			var_1 = var_3.origin[2];
-			var_2 = 1;
+			var_4 = var_9;
+			var_3 = var_8;
 		}
+
+		// Good enough, stop looking.
+		if ( var_4 > var_1 * 0.8 )
+			break;
 	}
 
-	level.rsg.dropceiling = var_1;
-	scripts\mp\_resurgence::rsg_log( "infil: ceiling reference " + int( var_1 ) );
-	return var_1;
+	if ( !isdefined( var_3 ) || var_4 < 400 )
+	{
+		scripts\mp\_resurgence::rsg_log( "infil: best headroom only " + int( var_4 ) + ", no drop" );
+		return undefined;
+	}
+
+	// Back off slightly so we are never flush against the ceiling.
+	scripts\mp\_resurgence::rsg_log( "infil: drop headroom " + int( var_4 ) );
+	return ( var_3[0], var_3[1], var_3[2] - 32 );
 }
 
 ground_below( pos )
