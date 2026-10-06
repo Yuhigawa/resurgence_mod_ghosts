@@ -92,12 +92,18 @@ infil()
 		// loop instantly and logged a landing one second into a drop while
 		// the player was still in the sky with nothing controlling them.
 		// Require real airtime AND real altitude before believing it.
-		if ( gettime() - var_8 > 1500 && var_3 < 120 && self isonground() )
+		// Only airtime matters here, not altitude. Requiring "near the ground
+		// you started on" stranded anyone who drifted over a tall building
+		// and landed on a roof -- observed: three bots stuck airborne, one
+		// at altitude 984, rescued only by the timeout.
+		if ( gettime() - var_8 > 1500 && self isonground() )
 			break;
 
 		// Chute opens automatically near the ground, or stays shut if the
 		// player cut it.
-		if ( !self.rsg_chute && var_3 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) )
+		// Altitude OR elapsed time: over high ground the altitude test alone
+		// can never fire, and the player would freefall into the floor.
+		if ( !self.rsg_chute && ( var_3 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) || gettime() - var_8 > getdvarfloat( "scr_resurgence_infil_chute_time" ) * 1000 ) )
 			deploy_chute();
 
 		// Crouch cuts the chute and returns to freefall -- the dive you use

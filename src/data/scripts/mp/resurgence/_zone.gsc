@@ -26,10 +26,26 @@ run()
 	scripts\mp\resurgence\_spawning::probe_classnames();
 
 	level.rsg_center = map_centroid();
-	level.rsg_radius = getdvarfloat( "scr_resurgence_zone_radius_start" );
+
+	// Derive the opening radius from how far the map's spawn points actually
+	// spread, not a fixed number. A 2200 start was measured on prisonbreak
+	// and left every player on hashima outside the ring the moment the gas
+	// went live (observed: 2855, 2947, 3173 against a 2200 radius). The dvar
+	// now only sets a floor.
+	var_10 = map_extent() * getdvarfloat( "scr_resurgence_zone_start_margin" );
+
+	if ( var_10 < getdvarfloat( "scr_resurgence_zone_radius_start" ) )
+		var_10 = getdvarfloat( "scr_resurgence_zone_radius_start" );
+
+	level.rsg_radius = var_10;
 
 	var_0 = max( 1, getdvarint( "scr_resurgence_zone_phases" ) );
-	var_1 = getdvarfloat( "scr_resurgence_zone_radius_start" );
+
+	// Phase maths must start from the radius we ACTUALLY opened at, not the
+	// dvar. Using the dvar made the first phase leap 5185 -> 1810 on a map
+	// whose ring opened at 5185, collapsing most of the playable area in one
+	// shrink.
+	var_1 = level.rsg_radius;
 	var_2 = getdvarfloat( "scr_resurgence_zone_radius_end" );
 	var_3 = getdvarint( "scr_resurgence_zone_hold" );
 	var_4 = getdvarint( "scr_resurgence_zone_shrink" );
@@ -131,6 +147,24 @@ damage_loop()
 			var_1 dodamage( var_0, var_1.origin );
 		}
 	}
+}
+
+// Furthest spawn point from the centroid: a usable proxy for map size.
+map_extent()
+{
+	var_0 = scripts\mp\resurgence\_spawning::spawn_candidates();
+	var_1 = 0;
+
+	foreach ( var_2 in var_0 )
+	{
+		var_3 = distance2d( var_2.origin, level.rsg_center );
+
+		if ( var_3 > var_1 )
+			var_1 = var_3;
+	}
+
+	scripts\mp\_resurgence::rsg_log( "zone: map extent " + int( var_1 ) + " units from centre" );
+	return var_1;
 }
 
 // The centroid of the map's spawn points, which is a good enough "middle of

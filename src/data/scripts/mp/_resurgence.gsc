@@ -105,6 +105,8 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
 	setdvarifuninitialized( "scr_resurgence_zone_start_delay", 45 );
+	setdvarifuninitialized( "scr_resurgence_zone_start_margin", 1.25 );
+	setdvarifuninitialized( "scr_resurgence_infil_chute_time", 12 );
 	setdvarifuninitialized( "scr_resurgence_zone_markers", 0 );
 	setdvarifuninitialized( "scr_resurgence_zone_marker_icon", "compassiconfriendly" );
 	setdvarifuninitialized( "scr_resurgence_admin_killbots", 0 );
