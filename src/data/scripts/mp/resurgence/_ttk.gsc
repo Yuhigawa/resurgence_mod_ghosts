@@ -44,6 +44,11 @@ scaled_damage( attacker, damage, mod )
 	// Only player-dealt damage is scaled. Ring damage, falling and world
 	// damage carry no player attacker and must keep their configured values,
 	// or tuning gun damage would silently retune the gas as well.
+	// A parachute landing must never hurt, and fall damage carries no player
+	// attacker so it would otherwise pass through untouched.
+	if ( mod == "MOD_FALLING" && scripts\mp\resurgence\_infil::fall_immune( self ) )
+		return 0;
+
 	if ( !isdefined( attacker ) || !isplayer( attacker ) )
 		return damage;
 

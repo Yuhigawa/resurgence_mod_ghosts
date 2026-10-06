@@ -16,6 +16,7 @@ BOTS="${BOTS:-9}"
 HUMANS="${HUMANS:-3}"
 PORT="${PORT:-28960}"
 SQUADSIZE="${SQUADSIZE:-1}"
+MAP="${MAP:-}"
 RCON_PASSWORD="${RCON_PASSWORD:-rsgdev-local}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -24,7 +25,13 @@ echo "deployed"
 
 taskkill.exe /IM iw6x.exe /F >/dev/null 2>&1 || true
 sleep 2
-rm -f "$GHOSTS_DIR/logs/games_mp.log"
+# Rotate rather than delete: a restart used to destroy the log of whatever
+# we were trying to diagnose.
+if [ -f "$GHOSTS_DIR/logs/games_mp.log" ]; then
+    mkdir -p "$HERE/logs"
+    cp "$GHOSTS_DIR/logs/games_mp.log" "$HERE/logs/games_mp-$(date +%Y%m%d-%H%M%S).log"
+    : > "$GHOSTS_DIR/logs/games_mp.log"
+fi
 
 cd "$GHOSTS_DIR"
 nohup ./iw6x.exe -dedicated \

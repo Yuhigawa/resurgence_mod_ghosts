@@ -2,3 +2,6 @@
 *.ff
 *.iw6
 *.bik
+
+# rotated server logs
+logs/

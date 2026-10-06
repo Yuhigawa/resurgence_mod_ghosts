@@ -41,6 +41,8 @@ init()
 
 	scripts\mp\resurgence\_squads::init();
 	scripts\mp\resurgence\_movement::init();
+	scripts\mp\resurgence\_omni::init();
+	scripts\mp\resurgence\_infil::init();
 	scripts\mp\resurgence\_admin::init();
 	scripts\mp\resurgence\_zone::init();
 	scripts\mp\resurgence\_win::init();
@@ -69,6 +71,27 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_sprint_scale", 1.05 );
 	setdvarifuninitialized( "scr_resurgence_slide_scale", 1.35 );
 	setdvarifuninitialized( "scr_resurgence_slide_time", 0.9 );
+	setdvarifuninitialized( "scr_resurgence_omni_enabled", 1 );
+	setdvarifuninitialized( "scr_resurgence_omni_scale", 1.25 );
+	setdvarifuninitialized( "scr_resurgence_dive_enabled", 1 );
+	setdvarifuninitialized( "scr_resurgence_dive_force", 420 );
+	setdvarifuninitialized( "scr_resurgence_dive_lift", 150 );
+	setdvarifuninitialized( "scr_resurgence_dive_cooldown", 1.5 );
+	setdvarifuninitialized( "scr_resurgence_omnislide_enabled", 1 );
+	setdvarifuninitialized( "scr_resurgence_omnislide_force", 330 );
+	setdvarifuninitialized( "scr_resurgence_omnislide_cooldown", 1.0 );
+	setdvarifuninitialized( "scr_resurgence_omnislide_time", 0.55 );
+	setdvarifuninitialized( "scr_resurgence_omnislide_scale", 1.6 );
+	setdvarifuninitialized( "scr_resurgence_infil_enabled", 1 );
+	setdvarifuninitialized( "scr_resurgence_infil_height", 1600 );
+	setdvarifuninitialized( "scr_resurgence_infil_descent", 180 );
+	setdvarifuninitialized( "scr_resurgence_infil_steer", 260 );
+	setdvarifuninitialized( "scr_resurgence_infil_freefall", 900 );
+	setdvarifuninitialized( "scr_resurgence_infil_dive", 1100 );
+	setdvarifuninitialized( "scr_resurgence_infil_freefall_steer", 420 );
+	setdvarifuninitialized( "scr_resurgence_infil_chute_alt", 650 );
+	setdvarifuninitialized( "scr_resurgence_infil_min_descent", 220 );
+	setdvarifuninitialized( "scr_resurgence_infil_timeout", 45 );
 	setdvarifuninitialized( "scr_resurgence_damage_scale", 0.7 );
 	setdvarifuninitialized( "scr_resurgence_knife_hits", 3 );
 	setdvarifuninitialized( "scr_resurgence_primary", "iw6_imbel_mp" );
@@ -81,6 +104,7 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_zone_hold", 35 );
 	setdvarifuninitialized( "scr_resurgence_zone_shrink", 20 );
 	setdvarifuninitialized( "scr_resurgence_zone_damage", 5 );
+	setdvarifuninitialized( "scr_resurgence_zone_start_delay", 45 );
 	setdvarifuninitialized( "scr_resurgence_zone_markers", 0 );
 	setdvarifuninitialized( "scr_resurgence_zone_marker_icon", "compassiconfriendly" );
 	setdvarifuninitialized( "scr_resurgence_admin_killbots", 0 );

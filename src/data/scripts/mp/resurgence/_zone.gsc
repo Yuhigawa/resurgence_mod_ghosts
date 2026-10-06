@@ -36,6 +36,17 @@ run()
 
 	scripts\mp\_resurgence::rsg_log( "zone: center " + level.rsg_center + ", radius " + level.rsg_radius + ", " + var_0 + " phases" );
 	markers_create();
+
+	// Nobody has landed yet when the match starts. Without this the gas is
+	// already ticking while players are still descending and cannot do
+	// anything about it.
+	var_9 = getdvarfloat( "scr_resurgence_zone_start_delay" );
+
+	if ( var_9 > 0 )
+	{
+		scripts\mp\_resurgence::rsg_log( "zone: holding fire for " + var_9 + "s while players land" );
+		wait(var_9);
+	}
 	level thread hud_watch();
 	level thread damage_loop();
 
@@ -90,6 +101,10 @@ damage_loop()
 		foreach ( var_1 in level.players )
 		{
 			if ( !scripts\mp\resurgence\_squads::rsg_is_alive( var_1 ) )
+				continue;
+
+			// Descending under a parachute, with no way to outrun anything.
+			if ( scripts\mp\resurgence\_infil::fall_immune( var_1 ) )
 				continue;
 
 			if ( distance2d( var_1.origin, level.rsg_center ) <= level.rsg_radius )
