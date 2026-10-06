@@ -92,6 +92,7 @@ register_dvars()
 	setdvarifuninitialized( "scr_resurgence_infil_chute_alt", 650 );
 	setdvarifuninitialized( "scr_resurgence_infil_min_descent", 220 );
 	setdvarifuninitialized( "scr_resurgence_infil_timeout", 45 );
+	setdvarifuninitialized( "scr_resurgence_infil_spread", 400 );
 	setdvarifuninitialized( "scr_resurgence_damage_scale", 0.7 );
 	setdvarifuninitialized( "scr_resurgence_knife_hits", 3 );
 	setdvarifuninitialized( "scr_resurgence_primary", "iw6_imbel_mp" );

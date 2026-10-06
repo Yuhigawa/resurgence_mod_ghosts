@@ -1,17 +1,14 @@
 // Parachute infil — the battle royale drop-in.
 //
-// On spawn the player is lifted into the sky and descends slowly under
-// control, steering with normal movement input, until they touch down. That
-// is the Resurgence redeploy, and it also makes the opening of a match feel
-// like a drop rather than a team deathmatch spawn.
+// Every spawn is a drop: freefall first, steered by looking, then a chute
+// that opens near the ground and can be cut with crouch to dive again.
 //
-// There is no parachute model or animation in Ghosts multiplayer, so the
-// player falls in a falling pose. Accepted, same as the dive.
+// No parachute model or animation exists in Ghosts multiplayer, so the player
+// falls in a falling pose. Accepted deliberately.
 //
-// Three pieces make it work:
-//   setorigin         puts them up there
-//   setvelocity       clamps the descent into a glide and adds steering
-//   the _ttk hook     cancels the landing damage (see fall_immune below)
+// The hard-won rule here: a drop point must be in OPEN SKY with REAL GROUND
+// beneath it. Two earlier versions failed on exactly this and left players
+// frozen in mid-air until a timeout released them.
 
 init()
 {
@@ -38,8 +35,7 @@ infil_watch()
 		if ( !getdvarint( "scr_resurgence_infil_enabled" ) )
 			continue;
 
-		// Let the spawn settle before moving the player, or the engine's own
-		// spawn placement fights the teleport.
+		// Let the engine's own spawn placement settle before moving anyone.
 		wait 0.15;
 
 		if ( !scripts\mp\resurgence\_squads::rsg_is_alive( self ) )
@@ -54,70 +50,64 @@ infil()
 	self endon( "disconnect" );
 	self endon( "death" );
 
-	var_0 = getdvarfloat( "scr_resurgence_infil_height" );
+	var_0 = drop_point();
 
-	// The ground we were standing on before being lifted. Altitude above it
-	// decides when the chute opens -- no trace needed.
-	var_1 = self.origin[2];
+	if ( !isdefined( var_0 ) )
+	{
+		scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " no valid drop point, skipping" );
+		return;
+	}
+
+	var_1 = ground_below( var_0 );
 
 	self.rsg_infil = 1;
 	self.rsg_chute = 0;
-	self setorigin( self.origin + ( 0, 0, var_0 ) );
+	self setorigin( var_0 );
 	self setvelocity( ( 0, 0, 0 ) );
 	self iprintlnbold( "FREEFALL" );
-	scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " freefall from " + var_0 );
+	scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " freefall from altitude " + int( var_0[2] - var_1 ) );
 
 	wait 0.25;
 
 	var_2 = "stand";
-	var_8 = gettime();
+	var_3 = gettime();
 
 	for (;;)
 	{
-		// Safety net. If anything ever leaves a player airborne indefinitely
-		// again, cut them loose rather than stranding them in the sky.
-		if ( gettime() - var_8 > getdvarfloat( "scr_resurgence_infil_timeout" ) * 1000 )
+		// Safety net only. If this fires, the drop is broken -- it is not a
+		// fix, it is a symptom, and the log should be read.
+		if ( gettime() - var_3 > getdvarfloat( "scr_resurgence_infil_timeout" ) * 1000 )
 		{
-			scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " TIMED OUT airborne, releasing" );
+			scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " TIMED OUT airborne at altitude " + int( self.origin[2] - var_1 ) + " -- DROP IS BROKEN" );
 			break;
 		}
 
 		if ( !scripts\mp\resurgence\_squads::rsg_is_alive( self ) )
 			break;
 
-		var_3 = self.origin[2] - var_1;
+		var_4 = self.origin[2] - var_1;
 
-		// isonground() reports TRUE on the first iterations after setorigin --
-		// the engine has not processed the teleport yet -- which exited this
-		// loop instantly and logged a landing one second into a drop while
-		// the player was still in the sky with nothing controlling them.
-		// Require real airtime AND real altitude before believing it.
-		// Only airtime matters here, not altitude. Requiring "near the ground
-		// you started on" stranded anyone who drifted over a tall building
-		// and landed on a roof -- observed: three bots stuck airborne, one
-		// at altitude 984, rescued only by the timeout.
-		if ( gettime() - var_8 > 1500 && self isonground() )
+		// Airtime plus ground contact. Altitude is deliberately NOT part of
+		// this: requiring proximity to the starting ground stranded anyone
+		// who landed on a roof.
+		if ( gettime() - var_3 > 1500 && self isonground() )
 			break;
 
-		// Chute opens automatically near the ground, or stays shut if the
-		// player cut it.
-		// Altitude OR elapsed time: over high ground the altitude test alone
-		// can never fire, and the player would freefall into the floor.
-		if ( !self.rsg_chute && ( var_3 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) || gettime() - var_8 > getdvarfloat( "scr_resurgence_infil_chute_time" ) * 1000 ) )
+		// Chute on altitude OR elapsed time, because over high ground the
+		// altitude test alone may never fire.
+		if ( !self.rsg_chute && ( var_4 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) || gettime() - var_3 > getdvarfloat( "scr_resurgence_infil_chute_time" ) * 1000 ) )
 			deploy_chute();
 
-		// Crouch cuts the chute and returns to freefall -- the dive you use
-		// to beat someone to the ground.
-		var_4 = self getstance();
+		// Crouch cuts the chute and returns to freefall.
+		var_5 = self getstance();
 
-		if ( var_4 == "crouch" && var_2 != "crouch" && self.rsg_chute )
+		if ( var_5 == "crouch" && var_2 != "crouch" && self.rsg_chute )
 		{
 			self.rsg_chute = 0;
 			self iprintlnbold( "CHUTE CUT" );
-			scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " cut chute at " + int( var_3 ) );
 		}
 
-		var_2 = var_4;
+		var_2 = var_5;
 
 		if ( self.rsg_chute )
 			chute_physics();
@@ -130,7 +120,7 @@ infil()
 	wait 0.5;
 	self.rsg_infil = 0;
 	self.rsg_chute = 0;
-	scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " landed after " + int( ( gettime() - var_8 ) / 1000 ) + "s at altitude " + int( self.origin[2] - var_1 ) );
+	scripts\mp\_resurgence::rsg_log( "infil: " + self.name + " landed after " + int( ( gettime() - var_3 ) / 1000 ) + "s at altitude " + int( self.origin[2] - var_1 ) );
 }
 
 deploy_chute()
@@ -139,9 +129,9 @@ deploy_chute()
 	self iprintlnbold( "CHUTE DEPLOYED" );
 }
 
-// Freefall: you fall fast, and you steer by LOOKING. Pitching down converts
-// the fall into a dive, which is how you cover ground quickly or race someone
-// to a landing.
+// Freefall: fast, and steered by LOOKING. Pitching down converts the fall
+// into a dive. Descent is clamped downward -- without that, looking up
+// produced upward thrust and players flew instead of falling.
 freefall_physics()
 {
 	var_0 = self getplayerangles();
@@ -149,32 +139,26 @@ freefall_physics()
 	var_2 = getdvarfloat( "scr_resurgence_infil_freefall" );
 	var_3 = getdvarfloat( "scr_resurgence_infil_dive" );
 
-	// var_1[2] is negative when looking down, POSITIVE when looking up -- and
-	// without a clamp that produced upward velocity, so a player who looked
-	// up simply flew and never landed. Observed: nearly a minute airborne on
-	// a drop that should take twenty seconds. Descent is now always downward.
 	var_4 = 0 - var_2 + var_1[2] * var_3;
-	var_9 = 0 - getdvarfloat( "scr_resurgence_infil_min_descent" );
+	var_5 = 0 - getdvarfloat( "scr_resurgence_infil_min_descent" );
 
-	if ( var_4 > var_9 )
-		var_4 = var_9;
+	if ( var_4 > var_5 )
+		var_4 = var_5;
 
-	var_5 = self getnormalizedmovement();
-	var_6 = anglestoright( var_0 );
-	var_7 = ( var_1[0] * var_5[0] + var_6[0] * var_5[1], var_1[1] * var_5[0] + var_6[1] * var_5[1], 0 );
-	var_7 = vectornormalize( var_7 );
-	var_8 = getdvarfloat( "scr_resurgence_infil_freefall_steer" );
+	var_6 = self getnormalizedmovement();
+	var_7 = anglestoright( var_0 );
+	var_8 = ( var_1[0] * var_6[0] + var_7[0] * var_6[1], var_1[1] * var_6[0] + var_7[1] * var_6[1], 0 );
+	var_8 = vectornormalize( var_8 );
+	var_9 = getdvarfloat( "scr_resurgence_infil_freefall_steer" );
 
-	self setvelocity( ( var_7[0] * var_8, var_7[1] * var_8, var_4 ) );
+	self setvelocity( ( var_8[0] * var_9, var_8[1] * var_9, var_4 ) );
 }
 
-// Chute: slow, controlled, glides.
 chute_physics()
 {
 	var_0 = self getvelocity();
 	var_1 = getdvarfloat( "scr_resurgence_infil_descent" );
 
-	// Clamp both ways: never faster than the chute allows, and never upward.
 	if ( var_0[2] < 0 - var_1 || var_0[2] > 0 - getdvarfloat( "scr_resurgence_infil_min_descent" ) )
 		var_0 = ( var_0[0], var_0[1], 0 - var_1 );
 
@@ -194,7 +178,7 @@ chute_physics()
 	self setvelocity( var_0 );
 }
 
-// Consulted by _ttk: no landing from a deployment should ever hurt.
+// Consulted by _ttk and _zone: a drop must never take fall or gas damage.
 fall_immune( player )
 {
 	if ( !isdefined( player ) )
@@ -204,4 +188,66 @@ fall_immune( player )
 		return 0;
 
 	return player.rsg_infil;
+}
+
+// A point in open sky with REAL GROUND beneath it.
+//
+// Spawn points are guaranteed to sit on walkable ground, so the drop is
+// placed above one of them. Scattering freely around the map centre instead
+// put players over the void on smaller maps -- nothing to fall to, so they
+// hung at the drop altitude until the timeout.
+drop_point()
+{
+	var_0 = scripts\mp\resurgence\_spawning::spawn_candidates();
+
+	if ( var_0.size == 0 )
+		return undefined;
+
+	var_1 = getdvarfloat( "scr_resurgence_infil_spread" );
+	var_2 = ceiling_height() + getdvarfloat( "scr_resurgence_infil_height" );
+
+	for ( var_3 = 0; var_3 < 6; var_3++ )
+	{
+		var_4 = var_0[randomint( var_0.size )];
+		var_5 = ( var_4.origin[0] + randomfloatrange( 0 - var_1, var_1 ), var_4.origin[1] + randomfloatrange( 0 - var_1, var_1 ), var_2 );
+
+		// Verified to have ground under it before it is used.
+		if ( var_5[2] - ground_below( var_5 ) < 15000 )
+			return var_5;
+	}
+
+	// Nothing jittered worked: sit directly over a spawn point, which always
+	// has ground beneath it.
+	var_6 = var_0[randomint( var_0.size )];
+	return ( var_6.origin[0], var_6.origin[1], var_2 );
+}
+
+// Highest spawn point on the map, as a reference for clearing buildings.
+ceiling_height()
+{
+	if ( isdefined( level.rsg.dropceiling ) )
+		return level.rsg.dropceiling;
+
+	var_0 = scripts\mp\resurgence\_spawning::spawn_candidates();
+	var_1 = 0;
+	var_2 = 0;
+
+	foreach ( var_3 in var_0 )
+	{
+		if ( !var_2 || var_3.origin[2] > var_1 )
+		{
+			var_1 = var_3.origin[2];
+			var_2 = 1;
+		}
+	}
+
+	level.rsg.dropceiling = var_1;
+	scripts\mp\_resurgence::rsg_log( "infil: ceiling reference " + int( var_1 ) );
+	return var_1;
+}
+
+ground_below( pos )
+{
+	var_0 = playerphysicstrace( pos, ( pos[0], pos[1], pos[2] - 20000 ) );
+	return var_0[2];
 }
