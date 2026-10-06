@@ -112,6 +112,52 @@ Four distinct reasons, all mine:
 4. **Bots cannot produce human inputs.** They do not look up, cut chutes, or
    stand still. Failure 1 was unreachable by bot testing in principle.
 
+### 7. Cutting the chute did nothing, and the table said it worked
+
+The altitude test re-opened the chute on the very next iteration, 50 ms after
+every cut, so cutting was impossible anywhere below `chute_alt` — which is the
+entire band where a chute exists. It only appeared to work above that altitude,
+in the `chute_time` case.
+
+**Fix:** a sticky `rsg_chute_cut` flag gates re-deployment, cleared at the start
+of each drop.
+
+**How it was found:** a code review, not testing. Nobody had cut a chute in any
+bot run — bots do not crouch while descending — and I had listed the row as
+working in this document's own status table on the strength of having written
+the code. That is the failure mode this postmortem exists to stop, repeated
+inside the postmortem itself.
+
+### 8. `rsg_infil` leaked on death and could hang a match
+
+`infil()` carries `endon( "death" )` and resets the flag *after* its loop, so
+dying mid-drop skipped the reset. A stale `rsg_infil` makes `fall_immune()`
+return true forever, and `_zone.gsc` consults it for gas damage — so a
+permanently gas-immune player cannot be killed by the ring, last-squad-standing
+never resolves, and the match hangs with no error anywhere. It self-healed on the
+next completed drop, which hid it, but not if the next drop early-returned or
+infil was disabled mid-match.
+
+**Fix:** unconditional reset at the top of every spawn, before the enabled check.
+
+**How it was found:** code review. No test would have caught it without someone
+dying mid-drop and then watching a later match fail to end.
+
+### 9. Diving bought time, not distance
+
+Vertical speed came from pitch while horizontal was a flat value from stick input
+alone — so looking straight down made you fall faster but travel no further, and
+with no input at all `vectornormalize( ( 0, 0, 0 ) )` zeroed the horizontal
+entirely and you dropped vertically however you were aimed. A real skydive trades
+altitude for ground covered.
+
+**Fix:** velocity follows the view vector in three dimensions, with stick input
+adjusting on top.
+
+Also: `infil_height` of 1600 at 900/s was a 1.8-second fall, and 0.8 seconds in a
+dive — *under* the 1500 ms airtime gate, so a dive was punished rather than
+rewarded. Height is now 5000 with the chute opening at 1400.
+
 ## Testing rules going forward
 
 - **Log outcomes, not events.** Every drop logs duration and altitude, so a
@@ -124,6 +170,13 @@ Four distinct reasons, all mine:
   otherwise indistinguishable from a quiet server.
 - **State what was not tested.** Anything only a human can exercise — looking up,
   cutting a chute, feel — is reported as unverified rather than implied working.
+- **Never put a row in a status table because the code looks right.** Failures 7,
+  8 and 9 were all found by reading code, and failure 7 was listed as *working*
+  in this very document. A table entry needs either an observation or an explicit
+  "unverified".
+- **Balanced braces prove nothing.** A spliced function body can leave the file
+  perfectly balanced. The gate that actually catches a silent script death is
+  confirming `RSG:` lines appear in the log after every deploy.
 
 ## Current state
 
@@ -131,7 +184,8 @@ Four distinct reasons, all mine:
 | --- | --- |
 | Drop from open sky above real ground | working, 0 broken across a full bot match |
 | Freefall, dive by looking down | working; clamped so looking up cannot lift |
-| Chute auto-deploy, crouch to cut | working; altitude OR time so high ground cannot block it |
+| Chute auto-deploy | working; altitude OR time so high ground cannot block it |
+| Crouch to cut the chute | **was broken, now fixed** — see failure 7 |
 | Landing detection | working, including rooftops |
 | Fall and gas immunity while descending | working |
 | Feel: height, dive speed, steer, spread | **unverified** — needs a human |

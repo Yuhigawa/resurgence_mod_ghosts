@@ -32,6 +32,17 @@ infil_watch()
 	{
 		self waittill( "spawned_player" );
 
+		// Unconditional, and BEFORE the enabled check. infil() carries
+		// endon( "death" ), so dying mid-drop skips its own cleanup and
+		// leaves rsg_infil set. A stale flag means fall_immune() returns
+		// true forever, and _zone consults that for gas damage -- a
+		// permanently gas-immune player cannot be killed by the ring, so
+		// last-squad-standing never resolves and the match hangs with no
+		// error anywhere.
+		self.rsg_infil = 0;
+		self.rsg_chute = 0;
+		self.rsg_chute_cut = 0;
+
 		if ( !getdvarint( "scr_resurgence_infil_enabled" ) )
 			continue;
 
@@ -62,6 +73,7 @@ infil()
 
 	self.rsg_infil = 1;
 	self.rsg_chute = 0;
+	self.rsg_chute_cut = 0;
 	self setorigin( var_0 );
 	self setvelocity( ( 0, 0, 0 ) );
 	self iprintlnbold( "FREEFALL" );
@@ -95,7 +107,12 @@ infil()
 
 		// Chute on altitude OR elapsed time, because over high ground the
 		// altitude test alone may never fire.
-		if ( !self.rsg_chute && ( var_4 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) || gettime() - var_3 > getdvarfloat( "scr_resurgence_infil_chute_time" ) * 1000 ) )
+		//
+		// rsg_chute_cut is what makes cutting possible at all. Without it the
+		// altitude test re-opened the chute 50ms after every cut, so cutting
+		// did nothing anywhere below chute_alt -- which is the entire band
+		// where a chute exists.
+		if ( !self.rsg_chute && !self.rsg_chute_cut && ( var_4 < getdvarfloat( "scr_resurgence_infil_chute_alt" ) || gettime() - var_3 > getdvarfloat( "scr_resurgence_infil_chute_time" ) * 1000 ) )
 			deploy_chute();
 
 		// Crouch cuts the chute and returns to freefall.
@@ -104,6 +121,7 @@ infil()
 		if ( var_5 == "crouch" && var_2 != "crouch" && self.rsg_chute )
 		{
 			self.rsg_chute = 0;
+			self.rsg_chute_cut = 1;
 			self iprintlnbold( "CHUTE CUT" );
 		}
 
@@ -137,21 +155,34 @@ freefall_physics()
 	var_0 = self getplayerangles();
 	var_1 = anglestoforward( var_0 );
 	var_2 = getdvarfloat( "scr_resurgence_infil_freefall" );
-	var_3 = getdvarfloat( "scr_resurgence_infil_dive" );
 
-	var_4 = 0 - var_2 + var_1[2] * var_3;
-	var_5 = 0 - getdvarfloat( "scr_resurgence_infil_min_descent" );
+	// Velocity follows where you LOOK, in three dimensions. Previously the
+	// vertical came from pitch while the horizontal was a flat value from
+	// stick input alone, so looking down bought time in the air and no
+	// distance -- and with no input at all the horizontal was zero, dropping
+	// you perfectly vertically however you were aimed. A real skydive trades
+	// altitude for ground covered, which is what this does.
+	var_3 = ( var_1[0] * var_2, var_1[1] * var_2, var_1[2] * var_2 );
 
-	if ( var_4 > var_5 )
-		var_4 = var_5;
+	// Stick input still adjusts, relative to facing.
+	var_4 = self getnormalizedmovement();
 
-	var_6 = self getnormalizedmovement();
-	var_7 = anglestoright( var_0 );
-	var_8 = ( var_1[0] * var_6[0] + var_7[0] * var_6[1], var_1[1] * var_6[0] + var_7[1] * var_6[1], 0 );
-	var_8 = vectornormalize( var_8 );
-	var_9 = getdvarfloat( "scr_resurgence_infil_freefall_steer" );
+	if ( abs( var_4[0] ) > 0.1 || abs( var_4[1] ) > 0.1 )
+	{
+		var_5 = anglestoright( var_0 );
+		var_6 = ( var_1[0] * var_4[0] + var_5[0] * var_4[1], var_1[1] * var_4[0] + var_5[1] * var_4[1], 0 );
+		var_6 = vectornormalize( var_6 );
+		var_7 = getdvarfloat( "scr_resurgence_infil_freefall_steer" );
+		var_3 = ( var_3[0] + var_6[0] * var_7, var_3[1] + var_6[1] * var_7, var_3[2] );
+	}
 
-	self setvelocity( ( var_8[0] * var_9, var_8[1] * var_9, var_4 ) );
+	// Always descending: looking up must never produce lift.
+	var_8 = 0 - getdvarfloat( "scr_resurgence_infil_min_descent" );
+
+	if ( var_3[2] > var_8 )
+		var_3 = ( var_3[0], var_3[1], var_8 );
+
+	self setvelocity( var_3 );
 }
 
 chute_physics()
